@@ -116,6 +116,14 @@ class BeatmapTableWidget(QTableWidget):
             return self._rows[current_row].md5_hash
         return None
 
+    def current_item_hash(self) -> str | None:
+        item = self.currentItem()
+        if item is not None:
+            value = item.data(Qt.ItemDataRole.UserRole)
+            if isinstance(value, str) and value:
+                return value
+        return self.current_hash()
+
     def select_hash(self, md5_hash: str) -> None:
         self.select_hashes([md5_hash])
 

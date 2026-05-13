@@ -332,6 +332,17 @@ class BeatmapListViewModel:
                 return
         self._current_detail = None
 
+    def select_current_detail(self, md5_hash: str | None) -> None:
+        if md5_hash is None:
+            self._current_detail = None
+            return
+
+        for row in self._results:
+            if row.md5_hash == md5_hash:
+                self._current_detail = row
+                return
+        self._current_detail = None
+
     def add_selected_to_collections(self, collection_names: Sequence[str]) -> None:
         selected_hashes = self._selected_hashes or ([self._current_detail.md5_hash] if self._current_detail else [])
         target_names = [name for name in dict.fromkeys(collection_names) if name.strip()]

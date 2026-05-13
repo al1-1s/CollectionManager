@@ -72,6 +72,7 @@ class MainWindow(QMainWindow):
         self._collection_panel = self._build_collection_panel()
         self._beatmap_table = BeatmapTableWidget()
         self._beatmap_table.itemSelectionChanged.connect(self._on_beatmap_selection_changed)
+        self._beatmap_table.itemClicked.connect(lambda *_: self._on_beatmap_selection_changed())
         self._beatmap_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._beatmap_table.customContextMenuRequested.connect(self._show_main_beatmap_context_menu)
         self._beatmap_detail = BeatmapDetailWidget()
@@ -131,6 +132,7 @@ class MainWindow(QMainWindow):
         self._collection_list = QListWidget()
         self._collection_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._collection_list.itemSelectionChanged.connect(self._on_collection_selection_changed)
+        self._collection_list.itemClicked.connect(lambda *_: self._on_collection_selection_changed())
         self._collection_list.itemDoubleClicked.connect(self._on_collection_activated)
         self._collection_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._collection_list.customContextMenuRequested.connect(self._show_collection_context_menu)
@@ -397,15 +399,17 @@ class MainWindow(QMainWindow):
 
     def _on_collection_selection_changed(self) -> None:
         selected_names = self._selected_collection_names()
+        current_item = self._collection_list.currentItem()
+        current_name = str(current_item.data(Qt.ItemDataRole.UserRole)) if current_item is not None else None
+
         if not selected_names:
             self._update_collection_action_buttons()
             return
-        if self._collection_multi_select.isChecked() and len(selected_names) > 1:
-            self._update_collection_action_buttons()
-            return
-        if selected_names[0] != self._viewmodel.current_collection_name:
+        if current_name is None:
+            current_name = selected_names[0]
+        if current_name != self._viewmodel.current_collection_name:
             self._collection_beatmapset_filter_id = None
-        self._viewmodel.select_collection(selected_names[0])
+        self._viewmodel.select_collection(current_name)
         self._render_current_collection()
         self._update_collection_action_buttons()
 
@@ -415,7 +419,7 @@ class MainWindow(QMainWindow):
         self._render_current_collection()
 
     def _on_beatmap_selection_changed(self) -> None:
-        md5_hash = self._beatmap_table.current_hash()
+        md5_hash = self._beatmap_table.current_item_hash()
         self._viewmodel.select_beatmap(md5_hash)
         self._beatmap_detail.set_row(self._viewmodel.current_detail)
         self._update_beatmap_action_buttons()
@@ -750,6 +754,7 @@ class BeatmapListWindow(QMainWindow):
 
         self._table = BeatmapTableWidget()
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
+        self._table.itemClicked.connect(lambda *_: self._on_selection_changed())
         self._table.itemDoubleClicked.connect(self._on_item_double_clicked)
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._show_beatmap_context_menu)
@@ -842,7 +847,9 @@ class BeatmapListWindow(QMainWindow):
 
     def _on_selection_changed(self) -> None:
         selected_hashes = self._table.selected_hashes()
+        current_hash = self._table.current_item_hash()
         self._viewmodel.select_hashes(selected_hashes)
+        self._viewmodel.select_current_detail(current_hash)
         self._detail.set_row(self._viewmodel.current_detail)
         self._selection_label.setText(tr("main.list.selection", count=len(selected_hashes)))
         self._update_beatmap_action_buttons()
