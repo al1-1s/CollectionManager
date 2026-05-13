@@ -1,0 +1,112 @@
+"""Startup dialog for CollectionManager."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout
+from loguru import logger
+
+from src.CollectionManager.app.bootstrap import load_initial_data, summarize_current_data
+from src.CollectionManager.app.dependency import Container
+
+from .i18n import current_language, language_label, register_listener, set_language, tr
+from .windows import MainWindow
+
+
+class StartupDialog(QDialog):
+    """Startup dialog that loads data before opening the main window."""
+
+    def __init__(self, app: QApplication, container: Container, window_registry: list[object], parent=None) -> None:
+        super().__init__(parent)
+        self._app = app
+        self._container = container
+        self._window_registry = window_registry
+        self._main_window = None
+
+        self.setModal(True)
+        self.resize(460, 240)
+
+        layout = QVBoxLayout(self)
+        self._label = QLabel()
+        self._label.setWordWrap(True)
+        layout.addWidget(self._label)
+
+        language_row = QHBoxLayout()
+        self._language_label = QLabel()
+        language_row.addWidget(self._language_label)
+        self._language_combo = QComboBox()
+        self._language_combo.addItem("", "zh")
+        self._language_combo.addItem("", "en")
+        self._language_combo.currentIndexChanged.connect(self._on_language_changed)
+        language_row.addWidget(self._language_combo)
+        language_row.addStretch(1)
+        layout.addLayout(language_row)
+
+        self._use_previous_db = QCheckBox()
+        layout.addWidget(self._use_previous_db)
+
+        self._choose_button = QPushButton()
+        self._choose_button.clicked.connect(self._choose_directory)
+        layout.addWidget(self._choose_button)
+
+        self._quit_button = QPushButton()
+        self._quit_button.clicked.connect(self._cancel)
+        layout.addWidget(self._quit_button)
+
+        register_listener(self._retranslate_ui)
+        self._retranslate_ui()
+
+    def _retranslate_ui(self) -> None:
+        self.setWindowTitle(tr("startup.title"))
+        self._label.setText(tr("startup.description"))
+        self._language_label.setText(tr("startup.language"))
+        self._use_previous_db.setText(tr("startup.use_previous_db"))
+        self._choose_button.setText(tr("startup.choose_directory"))
+        self._quit_button.setText(tr("startup.quit"))
+
+        current = current_language()
+        self._language_combo.blockSignals(True)
+        self._language_combo.setItemText(0, language_label("zh"))
+        self._language_combo.setItemText(1, language_label("en"))
+        index = self._language_combo.findData(current)
+        if index >= 0:
+            self._language_combo.setCurrentIndex(index)
+        self._language_combo.blockSignals(False)
+
+    def _on_language_changed(self, *_: object) -> None:
+        language = str(self._language_combo.currentData() or current_language())
+        set_language(language)
+
+    def _choose_directory(self) -> None:
+        osu_dir = QFileDialog.getExistingDirectory(self, tr("startup.choose_directory"))
+        if not osu_dir:
+            return
+
+        self._choose_button.setEnabled(False)
+        if self._use_previous_db.isChecked():
+            logger.info(f"Loading data from previous databases in {self._container.db._paths}")
+            self._label.setText(tr("startup.loading_previous"))
+        else:
+            logger.info(f"Loading data from osu! directory {osu_dir}")
+            self._label.setText(tr("startup.loading"))
+        self._app.processEvents()
+
+        try:
+            osu_path = Path(osu_dir)
+            if self._use_previous_db.isChecked():
+                summary = summarize_current_data(self._container, osu_path)
+            else:
+                summary = load_initial_data(self._container, osu_path)
+            self._main_window = MainWindow(container=self._container, osu_dir=Path(osu_dir), startup_summary=summary)
+            self._window_registry.append(self._main_window)
+            self._main_window.show()
+            self.accept()
+        except Exception as exc:
+            self._label.setText(tr("startup.loading_failed", error=exc))
+            self._choose_button.setEnabled(True)
+            logger.exception(f"Failed to load data from osu! directory {osu_dir}")
+            QMessageBox.critical(self, tr("startup.failed"), tr("startup.failed_message", error=exc))
+
+    def _cancel(self) -> None:
+        self.reject()
