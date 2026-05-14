@@ -23,7 +23,7 @@ class Container:
         self.beatmap_repository = BeatmapRepository(self.db)
         self.collection_repository = CollectionRepository(self.db)
         self.collection_service = CollectionService(self.collection_repository, self.beatmap_repository)
-        self.search_service = SearchService(self.beatmap_repository)
+        self.search_service = SearchService(self.beatmap_repository, self.collection_repository)
 
     def close(self) -> None:
         """Release database engine resources."""

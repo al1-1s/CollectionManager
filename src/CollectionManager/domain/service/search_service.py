@@ -6,8 +6,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from src.CollectionManager.infrastructure.storage.repositories import BeatmapRepository
-from src.CollectionManager.domain.model import Beatmap
+from src.CollectionManager.domain.model import Beatmap, Collection
+from src.CollectionManager.infrastructure.storage.repositories import BeatmapRepository, CollectionRepository
 
 
 @dataclass
@@ -162,11 +162,12 @@ class QueryParser:
 class SearchService:
     """High-level search service combining parsing and repository queries."""
 
-    def __init__(self, beatmap_repo: BeatmapRepository) -> None:
+    def __init__(self, beatmap_repo: BeatmapRepository, collection_repo: CollectionRepository) -> None:
         self._repo = beatmap_repo
+        self._collection_repo = collection_repo
         self._parser = QueryParser()
 
-    def search(
+    def search_beatmaps(
         self,
         query: str,
         limit: int | None = None,
@@ -182,3 +183,20 @@ class SearchService:
             limit=limit,
             filters=parsed.filters if parsed.filters else None,
         )
+
+    def search(self, query: str, limit: int | None = None) -> list[Beatmap]:
+        """Backward-compatible alias for beatmap search."""
+
+        return self.search_beatmaps(query, limit=limit)
+
+    def search_collections(self, query: str, limit: int | None = None) -> list[Collection]:
+        """Search collections by name using a case-insensitive substring match."""
+
+        needle = query.strip().casefold()
+        collections = self._collection_repo.list()
+        if needle:
+            collections = [collection for collection in collections if needle in collection.name.casefold()]
+        collections.sort(key=lambda collection: collection.name.casefold())
+        if limit is not None:
+            return collections[:limit]
+        return collections

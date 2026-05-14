@@ -47,7 +47,7 @@ class MainWindow(QMainWindow):
         self._container = container
         self._osu_dir = osu_dir
         self._startup_summary = startup_summary
-        self._viewmodel = MainWindowViewModel(container.collection_service)
+        self._viewmodel = MainWindowViewModel(container.collection_service, container.search_service)
         self._beatmap_window: BeatmapListWindow | None = None
         self._collection_rows: list = []
         self._collection_beatmapset_filter_id: int | None = None
@@ -91,6 +91,9 @@ class MainWindow(QMainWindow):
         self._collection_search_timer = QTimer(self)
         self._collection_search_timer.setSingleShot(True)
         self._collection_search_timer.timeout.connect(self._refresh_collection_view)
+        self._collection_list_search_timer = QTimer(self)
+        self._collection_list_search_timer.setSingleShot(True)
+        self._collection_list_search_timer.timeout.connect(self._refresh_collection_list)
 
     def _build_collection_panel(self) -> QWidget:
         panel = QFrame()
@@ -107,7 +110,14 @@ class MainWindow(QMainWindow):
         header_row.addWidget(self._collection_multi_select)
         layout.addLayout(header_row)
 
-        top_row = QHBoxLayout()
+        search_row = QHBoxLayout()
+        # search_row.addStretch(1)
+        self._collection_list_search_edit = QLineEdit()
+        self._collection_list_search_edit.setPlaceholderText(tr("main.collections.search_placeholder"))
+        self._collection_list_search_edit.textChanged.connect(lambda *_: self._schedule_collection_list_search())
+        self._collection_list_search_edit.returnPressed.connect(self._refresh_collection_list)
+        search_row.addWidget(self._collection_list_search_edit, 1)
+        layout.addLayout(search_row)
         self._collection_rename_button = QPushButton(tr("main.collections.rename"))
         self._collection_rename_button.clicked.connect(self._rename_selected_collection)
         self._collection_delete_button = QPushButton(tr("main.collections.delete"))
@@ -120,14 +130,6 @@ class MainWindow(QMainWindow):
         self._collection_export_all.clicked.connect(self._export_all_collections)
         self._collection_refresh = QPushButton(tr("action.reload"))
         self._collection_refresh.clicked.connect(self._reload_from_storage)
-        top_row.addWidget(self._collection_rename_button)
-        top_row.addWidget(self._collection_delete_button)
-        top_row.addWidget(self._collection_merge_button)
-        top_row.addWidget(self._collection_export_selected_button)
-        top_row.addWidget(self._collection_export_all)
-        top_row.addWidget(self._collection_refresh)
-        top_row.addStretch(1)
-        layout.addLayout(top_row)
 
         self._collection_list = QListWidget()
         self._collection_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -163,14 +165,11 @@ class MainWindow(QMainWindow):
         self._beatmap_multi_select.toggled.connect(self._on_beatmap_multiselect_changed)
         self._beatmapset_filter_button = QPushButton(tr("main.beatmaps.filter_beatmapset"))
         self._beatmapset_filter_button.clicked.connect(self._filter_selected_beatmapset)
+        header_row.addWidget(self._beatmap_multi_select)
         self._beatmapset_restore_button = QPushButton(tr("main.beatmaps.restore"))
         self._beatmapset_restore_button.clicked.connect(self._restore_collection_beatmapset_filter)
         self._beatmap_delete_button = QPushButton(tr("main.beatmaps.delete"))
         self._beatmap_delete_button.clicked.connect(self._delete_selected_beatmaps)
-        header_row.addWidget(self._beatmap_multi_select)
-        header_row.addWidget(self._beatmapset_filter_button)
-        header_row.addWidget(self._beatmapset_restore_button)
-        header_row.addWidget(self._beatmap_delete_button)
         layout.addLayout(header_row)
 
         control_row = QHBoxLayout()
@@ -189,10 +188,7 @@ class MainWindow(QMainWindow):
         self._collection_search_edit.setPlaceholderText(tr("main.beatmaps.search_placeholder"))
         self._collection_search_edit.textChanged.connect(lambda *_: self._schedule_collection_search())
         self._collection_search_edit.returnPressed.connect(self._refresh_collection_view)
-        self._collection_search_button = QPushButton(tr("main.beatmaps.search"))
-        self._collection_search_button.clicked.connect(lambda *_: self._refresh_collection_view())
         control_row.addWidget(self._collection_search_edit, 1)
-        control_row.addWidget(self._collection_search_button)
         layout.addLayout(control_row)
 
         layout.addWidget(self._beatmap_table, 1)
@@ -269,12 +265,12 @@ class MainWindow(QMainWindow):
         self._collection_refresh.setText(tr("action.reload"))
         self._new_collection_edit.setPlaceholderText(tr("main.collections.new_placeholder"))
         self._new_collection_button.setText(tr("main.collections.add"))
+        self._collection_list_search_edit.setPlaceholderText(tr("main.collections.search_placeholder"))
         self._beatmap_multi_select.setText(tr("main.beatmaps.multiselect"))
         self._beatmapset_filter_button.setText(tr("main.beatmaps.filter_beatmapset"))
         self._beatmapset_restore_button.setText(tr("main.beatmaps.restore"))
         self._beatmap_delete_button.setText(tr("main.beatmaps.delete"))
         self._collection_search_edit.setPlaceholderText(tr("main.beatmaps.search_placeholder"))
-        self._collection_search_button.setText(tr("main.beatmaps.search"))
 
     def _selected_collection_names(self) -> list[str]:
         names: list[str] = []
@@ -302,6 +298,13 @@ class MainWindow(QMainWindow):
                 first_item.setSelected(True)
 
         self._update_collection_action_buttons()
+
+    def _schedule_collection_list_search(self) -> None:
+        self._collection_list_search_timer.start(250)
+
+    def _refresh_collection_list(self) -> None:
+        self._viewmodel.search_collections(self._collection_list_search_edit.text())
+        self._render_collections()
 
     def _render_current_collection(self) -> None:
         self._collection_rows = self._viewmodel.beatmap_rows
@@ -721,13 +724,10 @@ class BeatmapListWindow(QMainWindow):
         header_row.addWidget(self._multi_select)
         self._beatmapset_filter_button = QPushButton(tr("main.beatmaps.filter_beatmapset"))
         self._beatmapset_filter_button.clicked.connect(self._filter_selected_beatmapset)
-        header_row.addWidget(self._beatmapset_filter_button)
         self._beatmapset_restore_button = QPushButton(tr("main.beatmaps.restore"))
         self._beatmapset_restore_button.clicked.connect(self._restore_beatmapset_filter)
-        header_row.addWidget(self._beatmapset_restore_button)
         self._top_add_button = QPushButton(tr("main.beatmaps.add_to_collection"))
         self._top_add_button.clicked.connect(self._add_selected_to_collection)
-        header_row.addWidget(self._top_add_button)
         layout.addLayout(header_row)
 
         control_row = QHBoxLayout()
@@ -746,10 +746,7 @@ class BeatmapListWindow(QMainWindow):
         self._search_edit.setPlaceholderText(tr("main.list.search_placeholder"))
         self._search_edit.textChanged.connect(lambda *_: self._schedule_search())
         self._search_edit.returnPressed.connect(self._run_search_from_editor)
-        self._search_button = QPushButton(tr("main.list.search"))
-        self._search_button.clicked.connect(lambda *_: self._run_search_from_editor())
         control_row.addWidget(self._search_edit, 1)
-        control_row.addWidget(self._search_button)
         layout.addLayout(control_row)
 
         self._table = BeatmapTableWidget()
@@ -789,7 +786,6 @@ class BeatmapListWindow(QMainWindow):
             self._sort_combo.setCurrentIndex(restored_index)
         self._sort_combo.blockSignals(False)
         self._search_edit.setPlaceholderText(tr("main.list.search_placeholder"))
-        self._search_button.setText(tr("main.list.search"))
         self._selection_label.setText(tr("main.list.selection", count=len(self._viewmodel.selected_hashes)))
 
     def _build_detail_panel(self) -> QWidget:

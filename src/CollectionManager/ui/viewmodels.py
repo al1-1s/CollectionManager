@@ -146,8 +146,11 @@ def collection_to_summary(collection: Collection) -> CollectionSummary:
 class MainWindowViewModel:
     """State holder for the main window."""
 
-    def __init__(self, collection_service: CollectionService) -> None:
+    def __init__(self, collection_service: CollectionService, search_service: SearchService) -> None:
         self._collection_service = collection_service
+        self._search_service = search_service
+        self._collection_search_query = ""
+        self._all_collections: list[CollectionSummary] = []
         self._collections: list[CollectionSummary] = []
         self._beatmap_rows: list[BeatmapRow] = []
         self._current_collection_name: str | None = None
@@ -169,11 +172,20 @@ class MainWindowViewModel:
     def current_detail(self) -> BeatmapRow | None:
         return self._current_detail
 
+    def _update_visible_collections(self) -> None:
+        query = self._collection_search_query.strip()
+        if query:
+            collections = [collection_to_summary(collection) for collection in self._search_service.search_collections(query)]
+        else:
+            collections = list(self._all_collections)
+        self._collections = collections
+
     def reload_collections(self, select_name: str | None = None) -> None:
         collections = self._collection_service.get_all_collections()
-        self._collections = [collection_to_summary(collection) for collection in collections]
-        self._collections.sort(key=lambda collection: collection.name.casefold())
-        available_names = [collection.name for collection in self._collections]
+        self._all_collections = [collection_to_summary(collection) for collection in collections]
+        self._all_collections.sort(key=lambda collection: collection.name.casefold())
+        self._update_visible_collections()
+        available_names = [collection.name for collection in self._all_collections]
 
         target_name = select_name
         if target_name not in available_names:
@@ -189,6 +201,10 @@ class MainWindowViewModel:
             return
 
         self.load_collection(target_name)
+
+    def search_collections(self, query: str) -> None:
+        self._collection_search_query = query
+        self._update_visible_collections()
 
     def load_collection(self, name: str) -> None:
         collection = self._collection_service.get_collection(name)
@@ -314,7 +330,7 @@ class BeatmapListViewModel:
 
     def search(self, query: str, limit: int | None = None) -> None:
         self._current_query = query
-        beatmaps = self._search_service.search(query, limit=limit)
+        beatmaps = self._search_service.search_beatmaps(query, limit=limit)
         self._results = [beatmap_to_row(beatmap) for beatmap in beatmaps]
         self._selected_hashes = [self._results[0].md5_hash] if self._results else []
         self._current_detail = self._results[0] if self._results else None
