@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QSizePolicy, QVBoxLayout
 from loguru import logger
 
 from src.CollectionManager.app.bootstrap import load_initial_data, summarize_current_data
@@ -25,34 +25,44 @@ class StartupDialog(QDialog):
         self._main_window = None
 
         self.setModal(True)
-        self.resize(460, 240)
+        self.setFixedSize(370, 135)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(4)
         self._label = QLabel()
         self._label.setWordWrap(True)
+        self._label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         layout.addWidget(self._label)
+        layout.addStretch(1)
 
-        language_row = QHBoxLayout()
+        self._use_previous_db = QCheckBox()
+
+        controls_layout = QVBoxLayout()
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setSpacing(4)
+
+        self._choose_button = QPushButton()
+        self._choose_button.clicked.connect(self._choose_directory)
+        controls_layout.addWidget(self._choose_button)
+
+        self._quit_button = QPushButton()
+        self._quit_button.clicked.connect(self._cancel)
+        controls_layout.addWidget(self._quit_button)
+
+        bottom_row = QHBoxLayout()
         self._language_label = QLabel()
-        language_row.addWidget(self._language_label)
+        bottom_row.addWidget(self._language_label)
         self._language_combo = QComboBox()
         self._language_combo.addItem("", "zh")
         self._language_combo.addItem("", "en")
         self._language_combo.currentIndexChanged.connect(self._on_language_changed)
-        language_row.addWidget(self._language_combo)
-        language_row.addStretch(1)
-        layout.addLayout(language_row)
+        bottom_row.addWidget(self._language_combo)
+        bottom_row.addStretch(1)
+        bottom_row.addWidget(self._use_previous_db)
+        controls_layout.addLayout(bottom_row)
 
-        self._use_previous_db = QCheckBox()
-        layout.addWidget(self._use_previous_db)
-
-        self._choose_button = QPushButton()
-        self._choose_button.clicked.connect(self._choose_directory)
-        layout.addWidget(self._choose_button)
-
-        self._quit_button = QPushButton()
-        self._quit_button.clicked.connect(self._cancel)
-        layout.addWidget(self._quit_button)
+        layout.addLayout(controls_layout)
 
         register_listener(self._retranslate_ui)
         self._retranslate_ui()
