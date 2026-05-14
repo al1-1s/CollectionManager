@@ -77,8 +77,19 @@ def init_logging(
     std_logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
     std_logging.captureWarnings(True)
 
+    def _console_sink(message) -> None:
+        stream = getattr(sys, "stderr", None)
+        if stream is None:
+            return
+
+        try:
+            stream.write(str(message))
+            stream.flush()
+        except Exception:
+            return
+
     logger.add(
-        sys.stderr,
+        _console_sink,
         level=level,
         format=LOG_FORMAT,
         colorize=True,
