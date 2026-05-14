@@ -38,7 +38,7 @@ class BeatmapRow:
 
     @property
     def is_available(self) -> bool:
-        return self.status == "available"
+        return self.status == "Available"
 
     @property
     def last_updated_display(self) -> str:
@@ -68,7 +68,7 @@ def beatmap_to_row(beatmap: Beatmap) -> BeatmapRow:
     return BeatmapRow(
         md5_hash=beatmap.md5_hash,
         display_name=beatmap.get_name(),
-        status="available",
+        status="Available",
         artist=beatmap.artist,
         title=beatmap.title,
         difficulty=beatmap.difficulty,
@@ -88,7 +88,7 @@ def missing_beatmap_row(md5_hash: str) -> BeatmapRow:
     return BeatmapRow(
         md5_hash=md5_hash,
         display_name=f"unknown - {md5_hash}",
-        status="missing",
+        status="Missing",
     )
 
 
