@@ -85,7 +85,7 @@ class StartupDialog(QDialog):
 
         self._choose_button.setEnabled(False)
         if self._use_previous_db.isChecked():
-            logger.info(f"Loading data from previous databases in {self._container.db._paths}")
+            logger.info(f"Loading data from previous databases in {self._container.db.paths}")
             self._label.setText(tr("startup.loading_previous"))
         else:
             logger.info(f"Loading data from osu! directory {osu_dir}")
@@ -95,6 +95,8 @@ class StartupDialog(QDialog):
         try:
             osu_path = Path(osu_dir)
             if self._use_previous_db.isChecked():
+                if not self._container.db.has_cached_beatmaps():
+                    raise FileNotFoundError(f"No cached beatmap database found at {self._container.db.paths.beatmap_db}")
                 summary = summarize_current_data(self._container, osu_path)
             else:
                 summary = load_initial_data(self._container, osu_path)

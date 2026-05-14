@@ -6,6 +6,7 @@ to read and write ORM models.
 
 from __future__ import annotations
 
+import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,7 +27,7 @@ class SqlitePaths:
 class SqliteDB:
 	"""Provide SQLite engines and sessions for each logical database."""
 
-	def __init__(self, paths: SqlitePaths | None = None, echo: bool = False) -> None:
+	def __init__(self, paths: SqlitePaths | None = None, echo: bool = False, create_schema: bool = True) -> None:
 		base_dir = Path.cwd() / "data"
 		self._paths = paths or SqlitePaths(
 			beatmap_db=base_dir / "beatmaps.db",
@@ -35,11 +36,19 @@ class SqliteDB:
 		)
 
 		self._echo = echo
+		self._create_schema_on_init = create_schema
 		for path in self._paths.__dict__.values():
 			path.parent.mkdir(parents=True, exist_ok=True)
 
 		self._create_engines()
-		self.create_schema()
+		if self._create_schema_on_init:
+			self.create_schema()
+
+	@property
+	def paths(self) -> SqlitePaths:
+		"""Return the configured SQLite file paths."""
+
+		return self._paths
 
 	def _create_engines(self) -> None:
 		self._beatmap_engine = create_engine(f"sqlite:///{self._paths.beatmap_db}", echo=self._echo)
@@ -84,6 +93,20 @@ class SqliteDB:
 			path.parent.mkdir(parents=True, exist_ok=True)
 		self._create_engines()
 		self.create_schema()
+
+	def has_cached_beatmaps(self) -> bool:
+		"""Return True when a persisted beatmap database already contains data."""
+
+		beatmap_db = self._paths.beatmap_db
+		if not beatmap_db.exists():
+			return False
+
+		try:
+			with sqlite3.connect(f"{beatmap_db.resolve().as_uri()}?mode=ro", uri=True) as connection:
+				row = connection.execute("SELECT COUNT(*) FROM beatmaps").fetchone()
+				return bool(row and row[0])
+		except sqlite3.Error:
+			return False
 
 	def dispose(self) -> None:
 		"""Dispose all SQLite engines owned by this database wrapper."""

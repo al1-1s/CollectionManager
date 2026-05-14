@@ -12,7 +12,7 @@ from src.CollectionManager.app.dependency import Container
 from src.CollectionManager.app.logger import DEFAULT_LEVEL, init_logging
 from src.CollectionManager.infrastructure.osu import collection as collection_structure
 from src.CollectionManager.infrastructure.osu import map_beatmap, map_collection, osuDb
-from src.CollectionManager.infrastructure.storage import BeatmapRepository, CollectionRepository
+from src.CollectionManager.infrastructure.storage import BeatmapRepository, CollectionRepository, SqliteDB
 
 
 @dataclass(slots=True)
@@ -48,11 +48,11 @@ def _resolve_log_level(debug: bool | None = None) -> str:
     return os.getenv("LOG_LEVEL", DEFAULT_LEVEL).upper()
 
 
-def build_container(debug: bool | None = None) -> Container:
+def build_container(debug: bool | None = None, create_schema: bool = True) -> Container:
     """Initialize logging and build the shared dependency container."""
 
     init_logging(level=_resolve_log_level(debug))
-    return Container()
+    return Container(db=SqliteDB(create_schema=create_schema))
 
 
 def init_service(debug: bool | None = None) -> tuple[CollectionRepository, BeatmapRepository]:
@@ -63,10 +63,10 @@ def init_service(debug: bool | None = None) -> tuple[CollectionRepository, Beatm
     return container.collection_repository, container.beatmap_repository
 
 
-def init_app(debug: bool | None = None) -> Container:
+def init_app(debug: bool | None = None, create_schema: bool = True) -> Container:
     """Initialize the application container for the UI layer."""
 
-    return build_container(debug=debug)
+    return build_container(debug=debug, create_schema=create_schema)
 
 
 def _load_beatmaps(container: Container, osu_db_path: Path) -> int:

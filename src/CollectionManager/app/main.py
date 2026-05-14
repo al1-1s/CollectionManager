@@ -18,7 +18,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("CollectionManager")
     app.setQuitOnLastWindowClosed(True)
-    container = init_app()
+    container = init_app(create_schema=False)
     startup_dialog = StartupDialog(app, container, _WINDOW_REFS)
     _WINDOW_REFS.append(startup_dialog)
     QTimer.singleShot(0, startup_dialog.show)
