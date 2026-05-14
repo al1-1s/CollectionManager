@@ -286,6 +286,16 @@ class MainWindowViewModel:
 
         self._collection_service.export_collections(list(target_names), output_path)
 
+    def add_beatmaps_to_collection(self, name: str, hashes: Sequence[str]) -> None:
+        target_hashes = [md5_hash for md5_hash in dict.fromkeys(hashes) if md5_hash.strip()]
+        if not name.strip():
+            raise ValueError(tr("main.dialog.prompt.select_collection_before_action"))
+        if not target_hashes:
+            raise ValueError(tr("main.dialog.prompt.select_beatmaps"))
+
+        self._collection_service.add_beatmaps_to_collection(name, target_hashes)
+        self.reload_collections(self._current_collection_name)
+
     def remove_beatmaps_from_current_collection(self, hashes: Sequence[str]) -> None:
         collection_name = self._current_collection_name
         if collection_name is None:

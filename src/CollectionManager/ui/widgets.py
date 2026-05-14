@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 
-from PySide6.QtCore import QEvent, Qt
-from PySide6.QtGui import QBrush, QColor
+from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtGui import QBrush, QColor, QDrag, QMouseEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -21,12 +22,30 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PySide6.QtCore import QItemSelectionModel
+from PySide6.QtCore import QItemSelectionModel, QMimeData
 
 from src.CollectionManager.domain.service import CollectionService
 
 from .i18n import register_listener, tr
 from .viewmodels import BeatmapRow, CollectionPickerViewModel
+
+
+BEATMAP_HASH_MIME_TYPE = "application/x-collectionmanager-beatmap-hashes"
+
+
+def encode_beatmap_hashes(hashes: Sequence[str]) -> bytes:
+    target_hashes = [hash_value for hash_value in dict.fromkeys(hashes) if hash_value]
+    return json.dumps(target_hashes).encode("utf-8")
+
+
+def decode_beatmap_hashes(payload: bytes | bytearray | memoryview) -> list[str]:
+    try:
+        values = json.loads(bytes(payload).decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return []
+    if not isinstance(values, list):
+        return []
+    return [str(value) for value in values if str(value)]
 
 
 class BeatmapTableWidget(QTableWidget):
@@ -54,6 +73,8 @@ class BeatmapTableWidget(QTableWidget):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
         self.setColumnWidth(0, 84)
         self.setColumnWidth(2, 160)
+        self.setDragEnabled(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.DragOnly)
 
     def _retranslate_ui(self) -> None:
         self.setHorizontalHeaderLabels([
@@ -169,6 +190,73 @@ class BeatmapTableWidget(QTableWidget):
                 if item is None:
                     continue
                 item.setBackground(self._hover_brush if affected_row == row_index else QBrush())
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            row = self.rowAt(int(event.position().y()))
+            if row >= 0 and not self.selectedIndexes():
+                self.selectRow(row)
+        super().mousePressEvent(event)
+
+    def startDrag(self, supportedActions: Qt.DropAction) -> None:
+        hashes = self.selected_hashes()
+        if not hashes:
+            current_hash = self.current_item_hash()
+            hashes = [current_hash] if current_hash else []
+        if not hashes:
+            return
+
+        mime_data = QMimeData()
+        encoded_hashes = encode_beatmap_hashes(hashes)
+        mime_data.setData(BEATMAP_HASH_MIME_TYPE, encoded_hashes)
+        mime_data.setText("\n".join(hashes))
+
+        drag = QDrag(self)
+        drag.setMimeData(mime_data)
+        drag.exec(Qt.DropAction.CopyAction)
+
+
+class CollectionListWidget(QListWidget):
+    """Collection list with beatmap-drop support."""
+
+    beatmapsDropped = Signal(str, list)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasFormat(BEATMAP_HASH_MIME_TYPE):
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event) -> None:
+        if event.mimeData().hasFormat(BEATMAP_HASH_MIME_TYPE) and self.itemAt(event.position().toPoint()) is not None:
+            event.acceptProposedAction()
+            return
+        super().dragMoveEvent(event)
+
+    def dropEvent(self, event) -> None:
+        if not event.mimeData().hasFormat(BEATMAP_HASH_MIME_TYPE):
+            super().dropEvent(event)
+            return
+
+        item = self.itemAt(event.position().toPoint())
+        if item is None:
+            event.ignore()
+            return
+
+        hashes = decode_beatmap_hashes(event.mimeData().data(BEATMAP_HASH_MIME_TYPE))
+        collection_name = str(item.data(Qt.ItemDataRole.UserRole) or "")
+        if not hashes or not collection_name:
+            event.ignore()
+            return
+
+        self.setCurrentItem(item)
+        self.beatmapsDropped.emit(collection_name, hashes)
+        event.acceptProposedAction()
 
 
 class BeatmapDetailWidget(QWidget):

@@ -36,7 +36,7 @@ from src.CollectionManager.app.dependency import Container
 
 from .i18n import current_language, language_label, register_listener, set_language, tr
 from .viewmodels import BeatmapListViewModel, MainWindowViewModel, filter_beatmap_rows, filter_beatmapset_rows, sort_beatmap_rows
-from .widgets import BeatmapDetailWidget, BeatmapTableWidget, CollectionPickerDialog
+from .widgets import BeatmapDetailWidget, BeatmapTableWidget, CollectionListWidget, CollectionPickerDialog
 
 
 class MainWindow(QMainWindow):
@@ -131,13 +131,14 @@ class MainWindow(QMainWindow):
         self._collection_refresh = QPushButton(tr("action.reload"))
         self._collection_refresh.clicked.connect(self._reload_from_storage)
 
-        self._collection_list = QListWidget()
+        self._collection_list = CollectionListWidget()
         self._collection_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._collection_list.itemSelectionChanged.connect(self._on_collection_selection_changed)
         self._collection_list.itemClicked.connect(lambda *_: self._on_collection_selection_changed())
         self._collection_list.itemDoubleClicked.connect(self._on_collection_activated)
         self._collection_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._collection_list.customContextMenuRequested.connect(self._show_collection_context_menu)
+        self._collection_list.beatmapsDropped.connect(self._handle_collection_drop)
         layout.addWidget(self._collection_list, 1)
 
         bottom_row = QHBoxLayout()
@@ -488,6 +489,21 @@ class MainWindow(QMainWindow):
         add_action(self._collection_export_all, self._export_all_collections)
         add_action(self._collection_refresh, self._reload_from_storage)
         menu.exec(self._collection_list.mapToGlobal(pos))
+
+    def _handle_collection_drop(self, collection_name: str, hashes: list[str]) -> None:
+        try:
+            self._viewmodel.add_beatmaps_to_collection(collection_name, hashes)
+        except Exception as exc:
+            QMessageBox.critical(self, tr("main.dialog.title.create_failed"), str(exc))
+            return
+
+        self._render_collections()
+        self._render_current_collection()
+        self.statusBar().showMessage(
+            tr("main.status.beatmaps_added", collection_name=collection_name, count=len(hashes)),
+            4000,
+        )
+        self._refresh_beatmap_window()
 
     def _create_collection(self) -> None:
         try:

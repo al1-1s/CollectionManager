@@ -30,6 +30,7 @@ def map_beatmap(raw: Any) -> Beatmap:
         case _:
             raise ValueError(f"Unknown mode: {mode}")
     if not pair:
+        # This may happen due to those "delete after download" difficulties.
         logger.warning(f"No star rating pair found for beatmap with mode {mode} and hash {_get(raw, 'md5_hash', 'unknown')}")
         pair = [(0, 0.0)]
     no_mod_sr = pair[0][1]
