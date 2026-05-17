@@ -20,8 +20,7 @@ from .models import BeatmapRecord, CollectionBeatmapRecord, CollectionRecord
 @dataclass(frozen=True)
 class SqlitePaths:
 	beatmap_db: Path
-	collection_meta_db: Path
-	collection_relation_db: Path
+	collection_db: Path
 
 
 class SqliteDB:
@@ -31,8 +30,7 @@ class SqliteDB:
 		base_dir = Path.cwd() / "data"
 		self._paths = paths or SqlitePaths(
 			beatmap_db=base_dir / "beatmaps.db",
-			collection_meta_db=base_dir / "collections.db",
-			collection_relation_db=base_dir / "collection_beatmaps.db",
+			collection_db=base_dir / "collections.db",
 		)
 
 		self._echo = echo
@@ -52,20 +50,15 @@ class SqliteDB:
 
 	def _create_engines(self) -> None:
 		self._beatmap_engine = create_engine(f"sqlite:///{self._paths.beatmap_db}", echo=self._echo)
-		self._collection_meta_engine = create_engine(f"sqlite:///{self._paths.collection_meta_db}", echo=self._echo)
-		self._collection_relation_engine = create_engine(
-			f"sqlite:///{self._paths.collection_relation_db}",
-			echo=self._echo,
-		)
+		self._collection_engine = create_engine(f"sqlite:///{self._paths.collection_db}", echo=self._echo)
 
 	def create_schema(self) -> None:
 		"""Create all known tables in their matching SQLite databases."""
 
 		SQLModel.metadata.create_all(self._beatmap_engine, tables=[BeatmapRecord.__table__])
-		SQLModel.metadata.create_all(self._collection_meta_engine, tables=[CollectionRecord.__table__])
 		SQLModel.metadata.create_all(
-			self._collection_relation_engine,
-			tables=[CollectionBeatmapRecord.__table__],
+			self._collection_engine,
+			tables=[CollectionRecord.__table__, CollectionBeatmapRecord.__table__],
 		)
 
 	@contextmanager
@@ -74,13 +67,18 @@ class SqliteDB:
 			yield session
 
 	@contextmanager
+	def collection_session(self) -> Iterator[Session]:
+		with Session(self._collection_engine) as session:
+			yield session
+
+	@contextmanager
 	def collection_meta_session(self) -> Iterator[Session]:
-		with Session(self._collection_meta_engine) as session:
+		with self.collection_session() as session:
 			yield session
 
 	@contextmanager
 	def collection_relation_session(self) -> Iterator[Session]:
-		with Session(self._collection_relation_engine) as session:
+		with self.collection_session() as session:
 			yield session
 
 	def reset(self) -> None:
@@ -112,5 +110,4 @@ class SqliteDB:
 		"""Dispose all SQLite engines owned by this database wrapper."""
 
 		self._beatmap_engine.dispose()
-		self._collection_meta_engine.dispose()
-		self._collection_relation_engine.dispose()
+		self._collection_engine.dispose()

@@ -27,42 +27,40 @@ class CollectionRepository:
 
 	def create(self, value: Collection) -> Collection:
 		"""Create a collection and store its initial hash ordering."""
-		with self._db.collection_meta_session() as meta_session, self._db.collection_relation_session() as relation_session:
-			meta_session.merge(CollectionRecord.from_domain(value))
-			for record in relation_session.exec(
+		with self._db.collection_session() as session:
+			session.merge(CollectionRecord.from_domain(value))
+			for record in session.exec(
 				select(CollectionBeatmapRecord).where(cast(Any, CollectionBeatmapRecord.collection_name) == value.name)
 			).all():
-				relation_session.delete(record)
+				session.delete(record)
 			for position, beatmap_hash in enumerate(value.hashes):
-				relation_session.add(
+				session.add(
 					CollectionBeatmapRecord.from_pair(value.name, beatmap_hash, position)
 				)
-			meta_session.commit()
-			relation_session.commit()
+			session.commit()
 		return value
 
 	def delete(self, name: str) -> None:
 		"""Delete a collection and all its beatmap associations."""
-		with self._db.collection_meta_session() as meta_session, self._db.collection_relation_session() as relation_session:
-			meta_record = meta_session.get(CollectionRecord, name)
+		with self._db.collection_session() as session:
+			meta_record = session.get(CollectionRecord, name)
 			if meta_record is None:
 				raise CollectionNotFoundError(f"Collection '{name}' does not exist.", name)
-			meta_session.delete(meta_record)
-			for record in relation_session.exec(
+			session.delete(meta_record)
+			for record in session.exec(
 				select(CollectionBeatmapRecord).where(cast(Any, CollectionBeatmapRecord.collection_name) == name)
 			).all():
-				relation_session.delete(record)
-			meta_session.commit()
-			relation_session.commit()
+				session.delete(record)
+			session.commit()
 
 	def get(self, name: str) -> Collection:
 		"""Retrieve a collection by name, including its beatmap hashes."""
-		with self._db.collection_meta_session() as meta_session, self._db.collection_relation_session() as relation_session:
-			meta_record = meta_session.get(CollectionRecord, name)
+		with self._db.collection_session() as session:
+			meta_record = session.get(CollectionRecord, name)
 			if meta_record is None:
 				raise CollectionNotFoundError(f"Collection '{name}' does not exist.", name)
 
-			relation_records = relation_session.exec(
+			relation_records = session.exec(
 				select(CollectionBeatmapRecord)
 				.where(cast(Any, CollectionBeatmapRecord.collection_name) == name)
 				.order_by(cast(Any, CollectionBeatmapRecord.position))
@@ -73,14 +71,13 @@ class CollectionRepository:
 
 	def list(self) -> list[Collection]:
 		"""List all collections."""
-		with self._db.collection_meta_session() as meta_session:
-			meta_records = meta_session.exec(select(CollectionRecord)).all()
+		with self._db.collection_session() as session:
+			meta_records = session.exec(select(CollectionRecord)).all()
 
-		if not meta_records:
-			return []
+			if not meta_records:
+				return []
 
-		with self._db.collection_relation_session() as relation_session:
-			relation_records = relation_session.exec(
+			relation_records = session.exec(
 				select(CollectionBeatmapRecord).where(
 					cast(Any, CollectionBeatmapRecord.collection_name).in_([record.name for record in meta_records])
 				)
@@ -104,22 +101,22 @@ class CollectionRepository:
 	def count(self) -> int:
 		"""Return the number of stored collections."""
 
-		with self._db.collection_meta_session() as meta_session:
-			return int(meta_session.exec(select(func.count()).select_from(CollectionRecord)).one())
+		with self._db.collection_session() as session:
+			return int(session.exec(select(func.count()).select_from(CollectionRecord)).one())
 
 	def add_beatmaps(self, name: str, beatmap_hashes: Sequence[str]) -> Collection:
 		"""Add beatmaps to a collection."""
 		if not beatmap_hashes:
 			return self.get(name)
 
-		with self._db.collection_meta_session() as meta_session, self._db.collection_relation_session() as relation_session:
-			meta_record = meta_session.get(CollectionRecord, name)
+		with self._db.collection_session() as session:
+			meta_record = session.get(CollectionRecord, name)
 			if meta_record is None:
 				raise CollectionNotFoundError(f"Collection '{name}' does not exist.", name)
 
 			existing = [
 				record
-				for record in relation_session.exec(
+				for record in session.exec(
 					select(CollectionBeatmapRecord).where(cast(Any, CollectionBeatmapRecord.collection_name) == name)
 				).all()
 			]
@@ -130,14 +127,13 @@ class CollectionRepository:
 			for beatmap_hash in beatmap_hashes:
 				if beatmap_hash in known_hashes:
 					continue
-				relation_session.add(CollectionBeatmapRecord.from_pair(name, beatmap_hash, position))
+				session.add(CollectionBeatmapRecord.from_pair(name, beatmap_hash, position))
 				known_hashes.add(beatmap_hash)
 				ordered_hashes.append(beatmap_hash)
 				position += 1
 			meta_record.count = len(ordered_hashes)
-			meta_session.add(meta_record)
-			meta_session.commit()
-			relation_session.commit()
+			session.add(meta_record)
+			session.commit()
 			return meta_record.to_domain(ordered_hashes)
 
 	def remove_beatmaps(self, name: str, beatmap_hashes: Sequence[str]) -> Collection:
@@ -145,64 +141,62 @@ class CollectionRepository:
 		if not beatmap_hashes:
 			return self.get(name)
 
-		with self._db.collection_meta_session() as meta_session, self._db.collection_relation_session() as relation_session:
-			meta_record = meta_session.get(CollectionRecord, name)
+		with self._db.collection_session() as session:
+			meta_record = session.get(CollectionRecord, name)
 			if meta_record is None:
 				raise CollectionNotFoundError(f"Collection '{name}' does not exist.", name)
 
-			for record in relation_session.exec(
+			for record in session.exec(
 				select(CollectionBeatmapRecord).where(cast(Any, CollectionBeatmapRecord.collection_name) == name)
 			).all():
 				if record.beatmap_hash in beatmap_hashes:
-					relation_session.delete(record)
-			relation_session.commit()
+					session.delete(record)
+			session.flush()
 
 			remaining = [
 				record
-				for record in relation_session.exec(
+				for record in session.exec(
 					select(CollectionBeatmapRecord).where(cast(Any, CollectionBeatmapRecord.collection_name) == name)
 				).all()
 			]
 			remaining.sort(key=lambda record: record.position)
 			for position, record in enumerate(remaining):
 				record.position = position
-				relation_session.add(record)
+				session.add(record)
 			meta_record.count = len(remaining)
-			meta_session.add(meta_record)
-			meta_session.commit()
-			relation_session.commit()
+			session.add(meta_record)
+			session.commit()
 			return meta_record.to_domain([record.beatmap_hash for record in remaining])
 
 	def exists(self, name: str) -> bool:
 		"""Check if a collection with the given name exists."""
-		with self._db.collection_meta_session() as meta_session:
-			return meta_session.get(CollectionRecord, name) is not None
+		with self._db.collection_session() as session:
+			return session.get(CollectionRecord, name) is not None
 
 	def rename(self, old_name: str, new_name: str) -> Collection:
 		"""Rename a collection and return the updated value."""
-		with self._db.collection_meta_session() as meta_session, self._db.collection_relation_session() as relation_session:
-			old_record = meta_session.get(CollectionRecord, old_name)
+		with self._db.collection_session() as session:
+			old_record = session.get(CollectionRecord, old_name)
 			if old_record is None:
 				raise CollectionNotFoundError(f"Collection '{old_name}' does not exist.", old_name)
 
 			# Update metadata
 			old_record.name = new_name
-			meta_session.add(old_record)
-			meta_session.commit()
+			session.add(old_record)
 
 			# Update all relation records
-			for record in relation_session.exec(select(CollectionBeatmapRecord)).all():
+			for record in session.exec(select(CollectionBeatmapRecord)).all():
 				if record.collection_name == old_name:
 					record.collection_name = new_name
-					relation_session.add(record)
-			relation_session.commit()
+					session.add(record)
+			session.commit()
 
 			return self.get(new_name)
 
 	def is_beatmap_in_collection(self, collection_name: str, beatmap_hash: str) -> bool:
 		"""Check if a beatmap hash is part of a collection."""
-		with self._db.collection_relation_session() as relation_session:
-			record = relation_session.exec(
+		with self._db.collection_session() as session:
+			record = session.exec(
 				select(CollectionBeatmapRecord).where(
 					cast(Any, CollectionBeatmapRecord.collection_name) == collection_name,
 					cast(Any, CollectionBeatmapRecord.beatmap_hash) == beatmap_hash
