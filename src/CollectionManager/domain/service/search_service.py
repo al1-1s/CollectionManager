@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 from dataclasses import dataclass
 from typing import Any
 
@@ -22,7 +23,8 @@ class QueryParser:
     """Parse osu-style search queries into structured filters and keywords."""
 
     # Comparison operators (ordered by length to match longest first)
-    OPERATORS = [">=", "<=", "!=", "=", ":", ">", "<"]
+    OPERATORS = [":=", ">=", "<=", "!=", "=", ":", ">", "<"]
+    TOKEN_PATTERN = re.compile(r"^(?P<field>[A-Za-z_]\w*)(?P<op>:=|>=|<=|!=|=|:|>|<)(?P<value>.*)$")
 
     # Field aliases for normalization
     FIELD_ALIASES = {
@@ -56,6 +58,39 @@ class QueryParser:
         "keys",
     }
 
+    def _tokenize(self, query: str) -> list[str]:
+        lexer = shlex.shlex(query, posix=True)
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        try:
+            return list(lexer)
+        except ValueError:
+            return query.split()
+
+    def _normalize_field(self, field: str) -> str:
+        return self.FIELD_ALIASES.get(field.casefold(), field.casefold())
+
+    def _parse_token(self, token: str) -> tuple[str, Any] | None:
+        match = self.TOKEN_PATTERN.match(token)
+        if match is None:
+            return None
+
+        field = self._normalize_field(match.group("field"))
+        if field not in self.SUPPORTED_FIELDS:
+            return None
+
+        op = match.group("op")
+        value = match.group("value")
+        if op == ':=':
+            op = ':'
+
+        if field == "unplayed":
+            return field, True
+
+        if op in (">=", "<=", ">", "<", "!="):
+            return field, (op, value)
+        return field, value
+
     def parse(self, query: str) -> ParsedQuery:
         """Parse a search query string.
 
@@ -70,88 +105,23 @@ class QueryParser:
         filters: dict[str, Any] = {}
         keywords: list[str] = []
 
-        # Step 1: Extract quoted values and replace with placeholders
-        quoted_map: dict[str, tuple[str, str]] = {}
-        placeholder_idx = 0
-
-        def replace_quoted(match):
-            nonlocal placeholder_idx
-            field_part = match.group(1)
-            quoted_val = match.group(2)
-            placeholder = f"__QUOTED_{placeholder_idx}__"
-            quoted_map[placeholder] = (field_part, quoted_val)
-            placeholder_idx += 1
-            return placeholder
-
-        # Match: field="value" or field:="value" etc
-        query = re.sub(
-            r'([\w]+)(?:=|:)?="([^"]*)"',
-            replace_quoted,
-            query,
-        )
-
-        # Step 2: Split remaining query into tokens
-        tokens = query.split()
-
-        i = 0
-        while i < len(tokens):
-            token = tokens[i]
-
-            # Check if token is a quoted placeholder
-            if token.startswith("__QUOTED_"):
-                if token in quoted_map:
-                    field_raw, value = quoted_map[token]
-                    field_norm = self.FIELD_ALIASES.get(field_raw.lower(), field_raw.lower())
-                    if field_norm in self.SUPPORTED_FIELDS:
-                        filters[field_norm] = value
-                i += 1
-                continue
-
-            # Check for unplayed as a standalone token (no operator)
-            if token.lower() == "unplayed":
+        for token in self._tokenize(query):
+            token_lower = token.casefold()
+            if token_lower == "unplayed":
                 filters["unplayed"] = True
-                i += 1
                 continue
 
-            # Check if token matches field[op]value pattern
-            matched = False
-            for op in self.OPERATORS:
-                if op in token:
-                    # Split on the first occurrence of operator
-                    idx = token.find(op)
-                    field_raw = token[:idx]
-                    value = token[idx + len(op) :]
-
-                    field_norm = self.FIELD_ALIASES.get(field_raw.lower(), field_raw.lower())
-
-                    # Handle unplayed special case (no value needed)
-                    if field_norm == "unplayed":
-                        filters[field_norm] = True
-                        matched = True
-                        break
-
-                    if field_norm in self.SUPPORTED_FIELDS:
-                        # Store as (op, value) if operator is comparison; otherwise just value
-                        if op in (">=", "<=", ">", "<", "!="):
-                            filters[field_norm] = (op, value)
-                        else:
-                            # For = and :, just store the value
-                            filters[field_norm] = value
-                        matched = True
-                        break
-
-            if not matched:
-                # Not a structured filter, treat as keyword
+            parsed = self._parse_token(token)
+            if parsed is None:
                 keywords.append(token)
 
-            i += 1
+            else:
+                field, value = parsed
+                filters[field] = value
 
-        # Step 3: Handle keys special case
         if "keys" in filters:
             keys_cond = filters.pop("keys")
-            # Implicitly set mode to mania
             filters["mode"] = "mania"
-            # Convert keys filter to cs filter
             filters["cs"] = keys_cond
 
         return ParsedQuery(
