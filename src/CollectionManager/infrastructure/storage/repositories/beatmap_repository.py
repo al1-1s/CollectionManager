@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from dataclasses import asdict
+from datetime import datetime, timezone
 
 from sqlalchemy import and_, or_
 from sqlalchemy import func
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlmodel import select
-from datetime import datetime, timezone
 from typing import Any, cast
 
 from src.CollectionManager.domain.model.beatmap import Beatmap
@@ -34,11 +36,25 @@ class BeatmapRepository:
 
 	def save_many(self, beatmaps: Iterable[Beatmap]) -> list[Beatmap]:
 		"""Insert or replace multiple beatmaps."""
-		results: list[Beatmap] = []
+		results = list(beatmaps)
+		if not results:
+			return []
+
+		rows = [asdict(beatmap) for beatmap in results]
+		table = cast(Any, BeatmapRecord).__table__
+		statement = sqlite_insert(table)
+		update_columns = {
+			column.name: getattr(statement.excluded, column.name)
+			for column in table.columns
+			if column.name != "md5_hash"
+		}
+		upsert = statement.on_conflict_do_update(
+			index_elements=[table.c.md5_hash],
+			set_=update_columns,
+		)
+
 		with self._db.beatmap_session() as session:
-			for beatmap in beatmaps:
-				session.merge(BeatmapRecord.from_domain(beatmap))
-				results.append(beatmap)
+			session.execute(upsert, rows)
 			session.commit()
 		return results
 
