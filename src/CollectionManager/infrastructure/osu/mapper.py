@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.CollectionManager.domain.model import Beatmap, Collection
-from loguru import logger
+from src.CollectionManager.infrastructure.exceptions.parser import MissingFieldError
 
 
 def _get(raw: Any, key: str, default: Any = None) -> Any:
@@ -31,7 +31,8 @@ def map_beatmap(raw: Any) -> Beatmap:
             raise ValueError(f"Unknown mode: {mode}")
     if not pair:
         # This may happen due to those "delete after download" difficulties.
-        logger.warning(f"No star rating pair found for beatmap with mode {mode} and hash {_get(raw, 'md5_hash', 'unknown')}")
+        raise MissingFieldError(f"No star rating pair found for beatmap with mode {mode} and hash {_get(raw, 'md5_hash', 'unknown')}", f"pair {mode}", raw)
+        
         pair = [(0, 0.0)]
     no_mod_sr = pair[0][1]
 
@@ -46,29 +47,20 @@ def map_beatmap(raw: Any) -> Beatmap:
         md5_hash=_get(raw, "md5_hash", ""),
         osu_file_name=_get(raw, "osu_file_name", ""),
         ranked_status=int(_get(raw, "ranked_status", 0)),
-        hit_circle_count=int(_get(raw, "hit_circle_count", 0)),
-        slider_count=int(_get(raw, "slider_count", 0)),
-        spinner_count=int(_get(raw, "spinner_count", 0)),
         last_modified=int(_get(raw, "last_modified", 0)),
         ar=float(_get(raw, "ar", 0.0)),
         cs=float(_get(raw, "cs", 0.0)),
         hp=float(_get(raw, "hp", 0.0)),
         od=float(_get(raw, "od", 0.0)),
-        drain_time=int(_get(raw, "drain_time", 0)),
         total_time=int(_get(raw, "total_time", 0)),
-        difficulty_id=int(_get(raw, "difficulty_id", 0)),
-        beatmap_id=int(_get(raw, "beatmap_id", 0)),
-        thread_id=int(_get(raw, "thread_id", 0)),
+        bid=int(_get(raw, "bid", 0)),
+        sid=int(_get(raw, "sid", 0)),
         mode=int(_get(raw, "mode", 0)),
         tags=_get(raw, "tags", ""),
         source=_get(raw, "source", ""),
         no_mod_sr=float(no_mod_sr),
         preview_time=int(_get(raw, "preview_time", 0)),
-        is_unplayed=bool(_get(raw, "is_unplayed", False)),
-        last_played=int(_get(raw, "last_played", 0)),
-        is_osz2=bool(_get(raw, "is_osz2", False)),
         folder_name=_get(raw, "folder_name", ""),
-        last_checked=int(_get(raw, "last_checked", 0)),
     )
 
 

@@ -29,11 +29,14 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QTableWidgetItem,
 )
+from loguru import logger
 
 from src.CollectionManager.app import bootstrap
 from src.CollectionManager.app.bootstrap import LoadSummary
 from src.CollectionManager.app.dependency import Container
+from src.CollectionManager.domain.exceptions import ServiceError
 
+from .exceptions import ViewModelError
 from .i18n import current_language, language_label, register_listener, set_language, tr
 from .viewmodels import BeatmapListViewModel, MainWindowViewModel, filter_beatmap_rows, filter_beatmapset_rows, sort_beatmap_rows
 from .widgets import BeatmapDetailWidget, BeatmapTableWidget, CollectionListWidget, CollectionPickerDialog
@@ -63,6 +66,13 @@ class MainWindow(QMainWindow):
         self._render_collections()
         self._render_current_collection()
         self.statusBar().showMessage(tr("main.status.loaded", beatmaps_loaded=startup_summary.beatmaps_loaded, collections_loaded=startup_summary.collections_loaded, osu_dir=osu_dir), 8000)
+
+    def _show_operation_failure(self, title_key: str, exc: Exception, context: str) -> None:
+        if isinstance(exc, (ServiceError, ViewModelError)):
+            QMessageBox.critical(self, tr(title_key), str(exc))
+            return
+        logger.exception(context)
+        QMessageBox.critical(self, tr(title_key), tr("main.unexpected_error"))
 
     def _setup_ui(self) -> None:
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -362,10 +372,10 @@ class MainWindow(QMainWindow):
             return
 
         current_detail = self._viewmodel.current_detail
-        if current_detail is None or current_detail.beatmap_id is None:
+        if current_detail is None or current_detail.sid is None:
             return
 
-        self._collection_beatmapset_filter_id = current_detail.beatmap_id
+        self._collection_beatmapset_filter_id = current_detail.sid
         self._refresh_collection_view()
 
     def _restore_collection_beatmapset_filter(self) -> None:
@@ -437,7 +447,7 @@ class MainWindow(QMainWindow):
             and not self._collection_multi_select.isChecked()
             and self._collection_beatmapset_filter_id is None
             and current_detail is not None
-            and current_detail.beatmap_id is not None
+            and current_detail.sid is not None
         )
         self._beatmap_delete_button.setEnabled(has_collection and selected_count >= 1)
         self._beatmapset_filter_button.setEnabled(can_filter)
@@ -494,7 +504,11 @@ class MainWindow(QMainWindow):
         try:
             self._viewmodel.add_beatmaps_to_collection(collection_name, hashes)
         except Exception as exc:
-            QMessageBox.critical(self, tr("main.dialog.title.create_failed"), str(exc))
+            self._show_operation_failure(
+                "main.dialog.title.create_failed",
+                exc,
+                f"Unexpected error while adding beatmaps to collection '{collection_name}'",
+            )
             return
 
         self._render_collections()
@@ -509,7 +523,11 @@ class MainWindow(QMainWindow):
         try:
             self._viewmodel.create_collection(self._new_collection_edit.text())
         except Exception as exc:
-            QMessageBox.critical(self, tr("main.dialog.title.create_failed"), str(exc))
+            self._show_operation_failure(
+                "main.dialog.title.create_failed",
+                exc,
+                "Unexpected error while creating a collection",
+            )
             return
 
         self._new_collection_edit.clear()
@@ -532,7 +550,11 @@ class MainWindow(QMainWindow):
         try:
             self._viewmodel.rename_collection(old_name, new_name)
         except Exception as exc:
-            QMessageBox.critical(self, tr("main.dialog.title.rename_failed"), str(exc))
+            self._show_operation_failure(
+                "main.dialog.title.rename_failed",
+                exc,
+                f"Unexpected error while renaming collection '{old_name}'",
+            )
             return
 
         self._render_collections()
@@ -554,7 +576,11 @@ class MainWindow(QMainWindow):
         try:
             self._viewmodel.delete_collections(selected_names)
         except Exception as exc:
-            QMessageBox.critical(self, tr("main.dialog.title.delete_failed"), str(exc))
+            self._show_operation_failure(
+                "main.dialog.title.delete_failed",
+                exc,
+                f"Unexpected error while deleting collections: {selected_names}",
+            )
             return
 
         self._render_collections()
@@ -574,7 +600,11 @@ class MainWindow(QMainWindow):
         try:
             self._viewmodel.merge_collections(selected_names, new_name)
         except Exception as exc:
-            QMessageBox.critical(self, tr("main.dialog.title.merge_failed"), str(exc))
+            self._show_operation_failure(
+                "main.dialog.title.merge_failed",
+                exc,
+                f"Unexpected error while merging collections into '{new_name}'",
+            )
             return
 
         self._render_collections()
@@ -593,7 +623,11 @@ class MainWindow(QMainWindow):
         try:
             self._viewmodel.export_collections(names, path)
         except Exception as exc:
-            QMessageBox.critical(self, tr("main.dialog.title.export_failed"), str(exc))
+            self._show_operation_failure(
+                "main.dialog.title.export_failed",
+                exc,
+                f"Unexpected error while exporting selected collections to {path}",
+            )
             return
 
         QMessageBox.information(self, tr("main.dialog.title.prompt"), tr("main.status.collections_exported", count=len(names)))
@@ -611,7 +645,11 @@ class MainWindow(QMainWindow):
         try:
             self._viewmodel.export_collections(names, path)
         except Exception as exc:
-            QMessageBox.critical(self, tr("main.dialog.title.export_failed"), str(exc))
+            self._show_operation_failure(
+                "main.dialog.title.export_failed",
+                exc,
+                f"Unexpected error while exporting all collections to {path}",
+            )
             return
 
         QMessageBox.information(self, tr("main.dialog.title.prompt"), tr("main.status.collections_exported", count=len(names)))
@@ -624,7 +662,11 @@ class MainWindow(QMainWindow):
         try:
             imported_count = bootstrap.import_collection_db(self._container, path)
         except Exception as exc:
-            QMessageBox.critical(self, tr("main.dialog.title.import_failed"), str(exc))
+            self._show_operation_failure(
+                "main.dialog.title.import_failed",
+                exc,
+                f"Unexpected error while importing collections from {path}",
+            )
             return
 
         self._viewmodel.reload_collections(self._viewmodel.current_collection_name)
@@ -645,7 +687,11 @@ class MainWindow(QMainWindow):
         try:
             summary = bootstrap.load_initial_data(self._container, self._osu_dir)
         except Exception as exc:
-            QMessageBox.critical(self, tr("main.dialog.title.reset_failed"), str(exc))
+            self._show_operation_failure(
+                "main.dialog.title.reset_failed",
+                exc,
+                f"Unexpected error while reloading data from {self._osu_dir}",
+            )
             return
 
         self._startup_summary = summary
@@ -683,7 +729,11 @@ class MainWindow(QMainWindow):
         try:
             self._viewmodel.remove_beatmaps_from_current_collection(selected_hashes)
         except Exception as exc:
-            QMessageBox.critical(self, tr("main.dialog.title.remove_failed"), str(exc))
+            self._show_operation_failure(
+                "main.dialog.title.remove_failed",
+                exc,
+                f"Unexpected error while removing beatmaps from collection '{collection_name}'",
+            )
             return
 
         self._collection_rows = self._viewmodel.beatmap_rows
@@ -900,10 +950,10 @@ class BeatmapListWindow(QMainWindow):
             return
 
         current_detail = self._viewmodel.current_detail
-        if current_detail is None or current_detail.beatmap_id is None:
+        if current_detail is None or current_detail.sid is None:
             return
 
-        self._beatmapset_filter_id = current_detail.beatmap_id
+        self._beatmapset_filter_id = current_detail.sid
         self._render_results()
 
     def _restore_beatmapset_filter(self) -> None:
@@ -920,7 +970,7 @@ class BeatmapListWindow(QMainWindow):
             not self._multi_select.isChecked()
             and self._beatmapset_filter_id is None
             and current_detail is not None
-            and current_detail.beatmap_id is not None
+            and current_detail.sid is not None
         )
         self._top_add_button.setEnabled(selected_count >= 1)
         self._beatmapset_filter_button.setEnabled(can_filter)

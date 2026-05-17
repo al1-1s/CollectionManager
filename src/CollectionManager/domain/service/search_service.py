@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from src.CollectionManager.domain.exceptions import ServiceOperationError
 from src.CollectionManager.domain.model import Beatmap, Collection
 from src.CollectionManager.infrastructure.storage.repositories import BeatmapRepository, CollectionRepository
 
@@ -178,14 +179,17 @@ class SearchService:
         """
 
         parsed = self._parser.parse(query)
-        return self._repo.search(
-            keyword=parsed.keyword,
-            limit=limit,
-            filters=parsed.filters if parsed.filters else None,
-        )
+        try:
+            return self._repo.search(
+                keyword=parsed.keyword,
+                limit=limit,
+                filters=parsed.filters if parsed.filters else None,
+            )
+        except Exception as exc:
+            raise ServiceOperationError("Failed to search beatmaps.") from exc
 
     def search(self, query: str, limit: int | None = None) -> list[Beatmap]:
-        """Backward-compatible alias for beatmap search."""
+        """Alias for beatmap search."""
 
         return self.search_beatmaps(query, limit=limit)
 
@@ -193,7 +197,10 @@ class SearchService:
         """Search collections by name using a case-insensitive substring match."""
 
         needle = query.strip().casefold()
-        collections = self._collection_repo.list()
+        try:
+            collections = self._collection_repo.list()
+        except Exception as exc:
+            raise ServiceOperationError("Failed to search collections.") from exc
         if needle:
             collections = [collection for collection in collections if needle in collection.name.casefold()]
         collections.sort(key=lambda collection: collection.name.casefold())

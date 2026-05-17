@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from src.CollectionManager.domain.model import Beatmap, Collection
 from src.CollectionManager.domain.service import CollectionService, SearchService
 
+from .exceptions import ViewModelValidationError
 from .i18n import tr
 
 
@@ -27,7 +28,7 @@ class BeatmapRow:
     title: str = ""
     difficulty: str = ""
     creator: str = ""
-    beatmap_id: int | None = None
+    sid: int | None = None
     last_updated: int = 0
     stars: float = 0.0
     ar: float = 0.0
@@ -73,7 +74,7 @@ def beatmap_to_row(beatmap: Beatmap) -> BeatmapRow:
         title=beatmap.title,
         difficulty=beatmap.difficulty,
         creator=beatmap.creator,
-        beatmap_id=beatmap.beatmap_id,
+        sid=beatmap.sid,
         last_updated=beatmap.last_modified,
         stars=beatmap.no_mod_sr,
         ar=beatmap.ar,
@@ -133,10 +134,10 @@ def filter_beatmap_rows(rows: Sequence[BeatmapRow], query: str) -> list[BeatmapR
     return filtered
 
 
-def filter_beatmapset_rows(rows: Sequence[BeatmapRow], beatmap_id: int | None) -> list[BeatmapRow]:
-    if beatmap_id is None:
+def filter_beatmapset_rows(rows: Sequence[BeatmapRow], sid: int | None) -> list[BeatmapRow]:
+    if sid is None:
         return list(rows)
-    return [row for row in rows if row.beatmap_id == beatmap_id]
+    return [row for row in rows if row.sid == sid]
 
 
 def collection_to_summary(collection: Collection) -> CollectionSummary:
@@ -172,6 +173,11 @@ class MainWindowViewModel:
     def current_detail(self) -> BeatmapRow | None:
         return self._current_detail
 
+    def _clear_current_collection(self) -> None:
+        self._current_collection_name = None
+        self._beatmap_rows = []
+        self._current_detail = None
+
     def _update_visible_collections(self) -> None:
         query = self._collection_search_query.strip()
         if query:
@@ -194,10 +200,8 @@ class MainWindowViewModel:
             else:
                 target_name = available_names[0] if available_names else None
 
-        self._current_collection_name = target_name
         if target_name is None:
-            self._beatmap_rows = []
-            self._current_detail = None
+            self._clear_current_collection()
             return
 
         self.load_collection(target_name)
@@ -207,12 +211,11 @@ class MainWindowViewModel:
         self._update_visible_collections()
 
     def load_collection(self, name: str) -> None:
-        collection = self._collection_service.get_collection(name)
-        if collection is None:
-            self._current_collection_name = None
-            self._beatmap_rows = []
-            self._current_detail = None
+        if not name.strip():
+            self._clear_current_collection()
             return
+
+        collection = self._collection_service.get_collection(name)
 
         found_beatmaps, _missing_hashes = self._collection_service.get_beatmaps(name)
         found_by_hash = {beatmap.md5_hash: beatmap for beatmap in found_beatmaps}
@@ -245,7 +248,7 @@ class MainWindowViewModel:
     def create_collection(self, name: str) -> None:
         collection_name = name.strip()
         if not collection_name:
-            raise ValueError(tr("main.dialog.prompt.select_collection_before_action"))
+            raise ViewModelValidationError(tr("main.dialog.prompt.select_collection_before_action"))
 
         self._collection_service.create_collection(collection_name, [])
         self.reload_collections(collection_name)
@@ -253,17 +256,15 @@ class MainWindowViewModel:
     def rename_collection(self, old_name: str, new_name: str) -> None:
         collection_name = new_name.strip()
         if not collection_name:
-            raise ValueError(tr("main.dialog.prompt.select_collection_before_action"))
+            raise ViewModelValidationError(tr("main.dialog.prompt.select_collection_before_action"))
 
-        result = self._collection_service.rename_collection(old_name, collection_name)
-        if result is None:
-            raise ValueError(tr("main.dialog.prompt.select_one_collection"))
+        self._collection_service.rename_collection(old_name, collection_name)
         self.reload_collections(collection_name)
 
     def delete_collections(self, names: Sequence[str]) -> None:
         target_names = [name for name in dict.fromkeys(names) if name.strip()]
         if not target_names:
-            raise ValueError(tr("main.dialog.prompt.select_collection_before_action"))
+            raise ViewModelValidationError(tr("main.dialog.prompt.select_collection_before_action"))
 
         for name in target_names:
             self._collection_service.delete_collection(name)
@@ -272,26 +273,24 @@ class MainWindowViewModel:
     def merge_collections(self, source_names: Sequence[str], new_name: str) -> None:
         target_name = new_name.strip()
         if not target_name:
-            raise ValueError(tr("main.dialog.prompt.select_collection_before_action"))
+            raise ViewModelValidationError(tr("main.dialog.prompt.select_collection_before_action"))
 
-        result = self._collection_service.merge_collections(source_names, target_name)
-        if result is None:
-            raise ValueError(tr("main.dialog.prompt.select_two_collections"))
+        self._collection_service.merge_collections(source_names, target_name)
         self.reload_collections(target_name)
 
     def export_collections(self, names: Sequence[str], output_path: str) -> None:
         target_names = [name for name in dict.fromkeys(names) if name.strip()]
         if not target_names:
-            raise ValueError(tr("main.dialog.prompt.select_collection_before_action"))
+            raise ViewModelValidationError(tr("main.dialog.prompt.select_collection_before_action"))
 
         self._collection_service.export_collections(list(target_names), output_path)
 
     def add_beatmaps_to_collection(self, name: str, hashes: Sequence[str]) -> None:
         target_hashes = [md5_hash for md5_hash in dict.fromkeys(hashes) if md5_hash.strip()]
         if not name.strip():
-            raise ValueError(tr("main.dialog.prompt.select_collection_before_action"))
+            raise ViewModelValidationError(tr("main.dialog.prompt.select_collection_before_action"))
         if not target_hashes:
-            raise ValueError(tr("main.dialog.prompt.select_beatmaps"))
+            raise ViewModelValidationError(tr("main.dialog.prompt.select_beatmaps"))
 
         self._collection_service.add_beatmaps_to_collection(name, target_hashes)
         self.reload_collections(self._current_collection_name)
@@ -299,15 +298,13 @@ class MainWindowViewModel:
     def remove_beatmaps_from_current_collection(self, hashes: Sequence[str]) -> None:
         collection_name = self._current_collection_name
         if collection_name is None:
-            raise ValueError(tr("main.dialog.prompt.select_one_collection_for_remove"))
+            raise ViewModelValidationError(tr("main.dialog.prompt.select_one_collection_for_remove"))
 
         target_hashes = [md5_hash for md5_hash in dict.fromkeys(hashes) if md5_hash.strip()]
         if not target_hashes:
-            raise ValueError(tr("main.dialog.prompt.select_beatmaps"))
+            raise ViewModelValidationError(tr("main.dialog.prompt.select_beatmaps"))
 
-        result = self._collection_service.remove_beatmaps(collection_name, target_hashes)
-        if result is None:
-            raise ValueError(tr("main.dialog.prompt.select_one_collection_for_remove"))
+        self._collection_service.remove_beatmaps(collection_name, target_hashes)
         self.reload_collections(collection_name)
 
 
@@ -373,9 +370,9 @@ class BeatmapListViewModel:
         selected_hashes = self._selected_hashes or ([self._current_detail.md5_hash] if self._current_detail else [])
         target_names = [name for name in dict.fromkeys(collection_names) if name.strip()]
         if not selected_hashes:
-            raise ValueError(tr("main.dialog.prompt.select_beatmaps"))
+            raise ViewModelValidationError(tr("main.dialog.prompt.select_beatmaps"))
         if not target_names:
-            raise ValueError(tr("main.dialog.prompt.select_collection_before_action"))
+            raise ViewModelValidationError(tr("main.dialog.prompt.select_collection_before_action"))
 
         for collection_name in target_names:
             self._collection_service.add_beatmaps_to_collection(collection_name, selected_hashes)
@@ -427,7 +424,6 @@ class CollectionPickerViewModel:
 
         updated: list[str] = []
         for collection_name in target_names:
-            result = self._collection_service.add_beatmaps_to_collection(collection_name, self._target_hashes)
-            if result is not None:
-                updated.append(collection_name)
+            self._collection_service.add_beatmaps_to_collection(collection_name, self._target_hashes)
+            updated.append(collection_name)
         return updated

@@ -7,6 +7,7 @@ from collections.abc import Sequence
 
 from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QDrag, QMouseEvent
+from loguru import logger
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -24,8 +26,10 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import QItemSelectionModel, QMimeData
 
+from src.CollectionManager.domain.exceptions import ServiceError
 from src.CollectionManager.domain.service import CollectionService
 
+from .exceptions import ViewModelError
 from .i18n import register_listener, tr
 from .viewmodels import BeatmapRow, CollectionPickerViewModel
 
@@ -388,6 +392,13 @@ class CollectionPickerDialog(QDialog):
     def selected_collections(self) -> list[str]:
         return list(self._selected_collections)
 
+    def _show_operation_failure(self, exc: Exception) -> None:
+        if isinstance(exc, (ServiceError, ViewModelError)):
+            QMessageBox.critical(self, tr("main.dialog.title.select_target"), str(exc))
+            return
+        logger.exception("Unexpected error while applying collection picker selection")
+        QMessageBox.critical(self, tr("main.dialog.title.select_target"), tr("main.unexpected_error"))
+
     def _retranslate_ui(self) -> None:
         self.setWindowTitle(tr("main.dialog.title.select_target"))
         ok_button = self._button_box.button(QDialogButtonBox.StandardButton.Ok)
@@ -419,5 +430,9 @@ class CollectionPickerDialog(QDialog):
             if item.checkState() == Qt.CheckState.Checked:
                 selected_names.append(str(item.data(Qt.ItemDataRole.UserRole)))
 
-        self._selected_collections = self._viewmodel.apply_selection(selected_names)
+        try:
+            self._selected_collections = self._viewmodel.apply_selection(selected_names)
+        except Exception as exc:
+            self._show_operation_failure(exc)
+            return
         self.accept()

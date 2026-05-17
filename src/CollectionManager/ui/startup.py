@@ -9,6 +9,7 @@ from loguru import logger
 
 from src.CollectionManager.app.bootstrap import load_initial_data, summarize_current_data
 from src.CollectionManager.app.dependency import Container
+from src.CollectionManager.domain.exceptions import CachedBeatmapDatabaseNotFoundError, ServiceError
 
 from .i18n import current_language, language_label, register_listener, set_language, tr
 from .windows import MainWindow
@@ -88,6 +89,11 @@ class StartupDialog(QDialog):
         language = str(self._language_combo.currentData() or current_language())
         set_language(language)
 
+    def _show_load_failure(self, message: str) -> None:
+        self._label.setText(tr("startup.loading_failed", error=message))
+        self._choose_button.setEnabled(True)
+        QMessageBox.critical(self, tr("startup.failed"), tr("startup.failed_message", error=message))
+
     def _choose_directory(self) -> None:
         osu_dir = QFileDialog.getExistingDirectory(self, tr("startup.choose_directory"))
         if not osu_dir:
@@ -106,7 +112,7 @@ class StartupDialog(QDialog):
             osu_path = Path(osu_dir)
             if self._use_previous_db.isChecked():
                 if not self._container.db.has_cached_beatmaps():
-                    raise FileNotFoundError(f"No cached beatmap database found at {self._container.db.paths.beatmap_db}")
+                    raise CachedBeatmapDatabaseNotFoundError(self._container.db.paths.beatmap_db)
                 summary = summarize_current_data(self._container, osu_path)
             else:
                 summary = load_initial_data(self._container, osu_path)
@@ -114,11 +120,12 @@ class StartupDialog(QDialog):
             self._window_registry.append(self._main_window)
             self._main_window.show()
             self.accept()
+        except ServiceError as exc:
+            logger.warning(f"Startup load failed for {osu_dir}: {exc}")
+            self._show_load_failure(str(exc))
         except Exception as exc:
-            self._label.setText(tr("startup.loading_failed", error=exc))
-            self._choose_button.setEnabled(True)
             logger.exception(f"Failed to load data from osu! directory {osu_dir}")
-            QMessageBox.critical(self, tr("startup.failed"), tr("startup.failed_message", error=exc))
+            self._show_load_failure(tr("startup.unexpected_error"))
 
     def _cancel(self) -> None:
         self.reject()

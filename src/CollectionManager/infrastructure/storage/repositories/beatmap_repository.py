@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, cast
 
 from src.CollectionManager.domain.model.beatmap import Beatmap
+from src.CollectionManager.infrastructure.exceptions.repository import BeatmapNotFoundError
 
 from ..models import BeatmapRecord
 from ..sqlite_db import SqliteDB
@@ -41,11 +42,13 @@ class BeatmapRepository:
 			session.commit()
 		return results
 
-	def get(self, md5_hash: str) -> Beatmap | None:
+	def get(self, md5_hash: str) -> Beatmap:
 		"""Retrieve a beatmap by its md5 hash."""
 		with self._db.beatmap_session() as session:
 			record = session.get(BeatmapRecord, md5_hash)
-			return record.to_domain() if record else None
+			if record is None:
+				raise BeatmapNotFoundError(f"Beatmap with hash '{md5_hash}' does not exist.", md5_hash)
+			return record.to_domain()
 
 	def count(self) -> int:
 		"""Return the number of stored beatmaps."""
@@ -142,7 +145,7 @@ class BeatmapRepository:
 		"""Search beatmaps.
 
 		Supports structured `filters` mapping field -> value or (op, value).
-		If `filters` is None, falls back to the previous keyword substring search.
+		If `filters` is None, uses keyword substring search.
 		Supported filter fields: artist, creator, title, difficulty, ar, cs, od, hp,
 		star/stars (maps to no_mod_sr), length, drain, mode, status, played, unplayed.
 		"""
@@ -284,10 +287,11 @@ class BeatmapRepository:
 		with self._db.beatmap_session() as session:
 			record = session.get(BeatmapRecord, md5_hash)
 			if record is None:
-				return
+				raise BeatmapNotFoundError(f"Beatmap with hash '{md5_hash}' does not exist.", md5_hash)
 			session.delete(record)
 			session.commit()
 
 	def exists(self, md5_hash: str) -> bool:
 		"""Check if a beatmap with the given md5 hash exists."""
-		return self.get(md5_hash) is not None
+		with self._db.beatmap_session() as session:
+			return session.get(BeatmapRecord, md5_hash) is not None

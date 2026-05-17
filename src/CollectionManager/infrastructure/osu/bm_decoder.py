@@ -1,110 +1,175 @@
-import rosu_pp_py as rosu # for sr calculation
-from pathlib import Path
-from loguru import logger
 import hashlib
+from pathlib import Path
 
+import rosu_pp_py as rosu # for sr calculation
 
 from src.CollectionManager.domain.model.beatmap import Beatmap
+from src.CollectionManager.infrastructure.exceptions.parser import BeatmapDecodeError, MissingFieldError
 
 class BeatmapDecoder:
-    def decode(self, beatmap_path: str) -> Beatmap:
-        with open(beatmap_path, "r", encoding="utf-8") as f:
-            meta= {}
-            section = None
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("//"):
-                    continue
-                if line.startswith("[") and line.endswith("]"):
-                    section = line[1:-1]
-                    continue
-                if section == "General":
-                    if line.startswith("Mode:"):
-                        meta["mode"] = int(line[len("Mode:") :].strip())
-                    elif line.startswith("AudioFilename:"):
-                        meta["audio_file_name"] = line[len("AudioFilename:") :].strip()
-                    elif line.startswith("PreviewTime:"):
-                        meta["preview_time"] = int(line[len("PreviewTime:") :].strip())
-                elif section == "Metadata":
-                    if line.startswith("Title:"):
-                        meta["title"] = line[len("Title:") :].strip()
-                    elif line.startswith("Artist:"):
-                        meta["artist"] = line[len("Artist:") :].strip()
-                    elif line.startswith("TitleUnicode:"):
-                        meta["title_unicode"] = line[len("TitleUnicode:") :].strip()
-                    elif line.startswith("ArtistUnicode:"):
-                        meta["artist_unicode"] = line[len("ArtistUnicode:") :].strip()
-                    elif line.startswith("Version:"):
-                        meta["version"] = line[len("Version:") :].strip()
-                    elif line.startswith("BeatmapID:"):
-                        meta["bid"] = int(line[len("BeatmapID:") :].strip())
-                    elif line.startswith("BeatmapSetID:"):
-                        meta["sid"] = int(line[len("BeatmapSetID:") :].strip())
-                    elif line.startswith("Tags:"):
-                        meta["tags"] = line[len("Tags:") :].strip()
-                    elif line.startswith("Source:"):    
-                        meta["source"] = line[len("Source:") :].strip()
-                    elif line.startswith("Creator:"):
-                        meta["creator"] = line[len("Creator:") :].strip()
-                elif section == "Difficulty":
-                    if line.startswith("HPDrainRate:"):
-                        meta["hp"] = float(line[len("HPDrainRate:") :].strip())
-                    elif line.startswith("CircleSize:"):
-                        meta["cs"] = float(line[len("CircleSize:") :].strip())
-                    elif line.startswith("OverallDifficulty:"):
-                        meta["od"] = float(line[len("OverallDifficulty:") :].strip())
-                    elif line.startswith("ApproachRate:"):
-                        meta["ar"] = float(line[len("ApproachRate:") :].strip())
-                elif section == "HitObjects":
-                    # We need to parse hit objects to calculate total_time.
-                    parts = line.split(",")
-                    time = int(parts[2])
-                    if time > meta.get("total_time", 0):
-                        meta["total_time"] = time
-        # Calculate md5 hash of the osu file content
-        with open(beatmap_path, "rb") as f:
-            content = f.read()
-            md5_hash = hashlib.md5(content).hexdigest()
-        meta["md5_hash"] = md5_hash
-        # Calculate star rating using rosu_pp_py
+    REQUIRED_FIELDS = [
+        "artist",
+        "artist_unicode",
+        "title",
+        "title_unicode",
+        "creator",
+        "version",
+        "audio_file_name",
+        "md5_hash",
+        "osu_file_name",
+        "ar",
+        "cs",
+        "hp",
+        "od",
+        "total_time",
+        "bid",
+        "sid",
+        "mode",
+        "tags",
+        "source",
+        "no_mod_sr",
+        "ranked_status",
+        "last_modified",
+        "preview_time",
+        "folder_name",
+    ]
+
+    @staticmethod
+    def _get_str(meta: dict[str, object], key: str) -> str:
+        value = meta[key]
+        if not isinstance(value, str):
+            raise TypeError(f"Field '{key}' must be a string.")
+        return value
+
+    @staticmethod
+    def _get_int(meta: dict[str, object], key: str) -> int:
+        value = meta[key]
+        if not isinstance(value, int):
+            raise TypeError(f"Field '{key}' must be an integer.")
+        return value
+
+    @staticmethod
+    def _get_float(meta: dict[str, object], key: str) -> float:
+        value = meta[key]
+        if not isinstance(value, float):
+            raise TypeError(f"Field '{key}' must be a float.")
+        return value
+
+    def decode(self, beatmap_path: Path) -> Beatmap:
+        path = Path(beatmap_path)
+        meta: dict[str, object] = {}
+        section = None
+        current_line = ""
+        line_number = 0
+
         try:
+            with path.open("r", encoding="utf-8") as f:
+                for line_number, raw_line in enumerate(f, start=1):
+                    current_line = raw_line.rstrip("\n")
+                    line = current_line.strip()
+                    if not line or line.startswith("//"):
+                        continue
+                    if line.startswith("[") and line.endswith("]"):
+                        section = line[1:-1]
+                        continue
+                    if section == "General":
+                        if line.startswith("Mode:"):
+                            meta["mode"] = int(line[len("Mode:") :].strip())
+                        elif line.startswith("AudioFilename:"):
+                            meta["audio_file_name"] = line[len("AudioFilename:") :].strip()
+                        elif line.startswith("PreviewTime:"):
+                            meta["preview_time"] = int(line[len("PreviewTime:") :].strip())
+                    elif section == "Metadata":
+                        if line.startswith("Title:"):
+                            meta["title"] = line[len("Title:") :].strip()
+                        elif line.startswith("Artist:"):
+                            meta["artist"] = line[len("Artist:") :].strip()
+                        elif line.startswith("TitleUnicode:"):
+                            meta["title_unicode"] = line[len("TitleUnicode:") :].strip()
+                        elif line.startswith("ArtistUnicode:"):
+                            meta["artist_unicode"] = line[len("ArtistUnicode:") :].strip()
+                        elif line.startswith("Version:"):
+                            meta["version"] = line[len("Version:") :].strip()
+                        elif line.startswith("BeatmapID:"):
+                            meta["bid"] = int(line[len("BeatmapID:") :].strip())
+                        elif line.startswith("BeatmapSetID:"):
+                            meta["sid"] = int(line[len("BeatmapSetID:") :].strip())
+                        elif line.startswith("Tags:"):
+                            meta["tags"] = line[len("Tags:") :].strip()
+                        elif line.startswith("Source:"):
+                            meta["source"] = line[len("Source:") :].strip()
+                        elif line.startswith("Creator:"):
+                            meta["creator"] = line[len("Creator:") :].strip()
+                    elif section == "Difficulty":
+                        if line.startswith("HPDrainRate:"):
+                            meta["hp"] = float(line[len("HPDrainRate:") :].strip())
+                        elif line.startswith("CircleSize:"):
+                            meta["cs"] = float(line[len("CircleSize:") :].strip())
+                        elif line.startswith("OverallDifficulty:"):
+                            meta["od"] = float(line[len("OverallDifficulty:") :].strip())
+                        elif line.startswith("ApproachRate:"):
+                            meta["ar"] = float(line[len("ApproachRate:") :].strip())
+                    elif section == "HitObjects":
+                        parts = line.split(",")
+                        if len(parts) < 3:
+                            raise ValueError("HitObject line is missing a timestamp column.")
+                        time = int(parts[2])
+                        current_total_time = meta.get("total_time", 0)
+                        if not isinstance(current_total_time, int):
+                            raise TypeError("Field 'total_time' must be an integer.")
+                        if time > current_total_time:
+                            meta["total_time"] = time
+
+            content = path.read_bytes()
+            meta["md5_hash"] = hashlib.md5(content).hexdigest()
             bm = rosu.Beatmap(content=content)
             meta["no_mod_sr"] = rosu.Difficulty().calculate(bm).stars
-        except Exception as e:
-            logger.error(f"Failed to calculate star rating for {beatmap_path}: {e}")
+        except MissingFieldError:
             raise
-        meta["osu_file_name"] = Path(beatmap_path).name
-        meta["folder_name"] = Path(beatmap_path).parent.name
+        except Exception as exc:
+            raise BeatmapDecodeError(
+                f"Failed to decode beatmap '{path}'.",
+                path,
+                line_number=line_number or None,
+                context=current_line or None,
+            ) from exc
+
+        meta["osu_file_name"] = path.name
+        meta["folder_name"] = path.parent.name
         meta["ranked_status"] = 0
-        meta["last_modified"] = int(Path(beatmap_path).stat().st_mtime)
-        # check if all required fields are present
-        required_fields = ["artist", "artist_unicode", "title", "title_unicode", "creator", "version", "audio_file_name", "md5_hash", "osu_file_name", "ar", "cs", "hp", "od", "total_time", "bid", "sid", "mode", "tags", "source", "no_mod_sr", "ranked_status", "last_modified", "preview_time", "folder_name"]
-        for field in required_fields:
+        meta["last_modified"] = int(path.stat().st_mtime)
+
+        for field in self.REQUIRED_FIELDS:
             if field not in meta:
-                logger.warning(f"Field {field} is missing in beatmap {beatmap_path}. Setting it to default value.")
+                raise MissingFieldError(
+                    f"Missing required field '{field}' in beatmap '{path}'.",
+                    field,
+                    {"beatmap_path": str(path), "present_fields": sorted(meta.keys())},
+                )
+
         return Beatmap(
-            artist=meta.get("artist", ""),
-            artist_unicode=meta.get("artist_unicode", ""),
-            title=meta.get("title", ""),
-            title_unicode=meta.get("title_unicode", ""),
-            creator=meta.get("creator", ""),
-            difficulty=meta.get("version", ""),
-            audio_file_name=meta.get("audio_file_name", ""),
-            md5_hash=meta.get("md5_hash", ""),
-            osu_file_name=meta.get("osu_file_name", ""),
-            ar=meta.get("ar", 0.0),
-            cs=meta.get("cs", 0.0),
-            hp=meta.get("hp", 0.0),
-            od=meta.get("od", 0.0),
-            total_time=meta.get("total_time", 0),
-            bid=meta.get("bid", 0),
-            sid=meta.get("sid", 0),
-            mode=meta.get("mode", 0),
-            tags=meta.get("tags", ""),
-            source=meta.get("source", ""),
-            no_mod_sr=meta.get("no_mod_sr", 0.0),
-            ranked_status=meta.get("ranked_status", 0),
-            last_modified=meta.get("last_modified", 0),
-            preview_time=meta.get("preview_time", 0),
-            folder_name=meta.get("folder_name", ""),
+            artist=self._get_str(meta, "artist"),
+            artist_unicode=self._get_str(meta, "artist_unicode"),
+            title=self._get_str(meta, "title"),
+            title_unicode=self._get_str(meta, "title_unicode"),
+            creator=self._get_str(meta, "creator"),
+            difficulty=self._get_str(meta, "version"),
+            audio_file_name=self._get_str(meta, "audio_file_name"),
+            md5_hash=self._get_str(meta, "md5_hash"),
+            osu_file_name=self._get_str(meta, "osu_file_name"),
+            ar=self._get_float(meta, "ar"),
+            cs=self._get_float(meta, "cs"),
+            hp=self._get_float(meta, "hp"),
+            od=self._get_float(meta, "od"),
+            total_time=self._get_int(meta, "total_time"),
+            bid=self._get_int(meta, "bid"),
+            sid=self._get_int(meta, "sid"),
+            mode=self._get_int(meta, "mode"),
+            tags=self._get_str(meta, "tags"),
+            source=self._get_str(meta, "source"),
+            no_mod_sr=self._get_float(meta, "no_mod_sr"),
+            ranked_status=self._get_int(meta, "ranked_status"),
+            last_modified=self._get_int(meta, "last_modified"),
+            preview_time=self._get_int(meta, "preview_time"),
+            folder_name=self._get_str(meta, "folder_name"),
         )

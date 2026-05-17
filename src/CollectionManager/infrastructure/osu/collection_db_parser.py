@@ -1,6 +1,7 @@
 from .data_types import String, Int
 from construct import Struct, this, Array
-from loguru import logger
+
+from src.CollectionManager.infrastructure.exceptions.parser import ParseError
 
 collectionEntry = Struct(
     "name" / String,
@@ -22,12 +23,14 @@ def parse_collection_db(data: bytes):
     try:
         result = collection.parse_stream(stream)
         return result
-    except:
+    except Exception as e:
         pos = stream.tell()
         start = max(0, pos - 64)
         end = min(len(data), pos + 64)
         snippet = data[start:end]
-        logger.error(f"Parse error at offset {pos} (0x{pos:X})")
-        logger.error(f"Context bytes [{start}:{end}] (hex):")
-        logger.error(binascii.hexlify(snippet).decode())
-        raise
+        context = binascii.hexlify(snippet).decode()
+        raise ParseError(
+            f"Failed to parse collection.db at position {pos}. Context: {context}",
+            pos,
+            context=context,
+        ) from e

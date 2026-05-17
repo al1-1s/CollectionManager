@@ -1,5 +1,6 @@
 from construct import Struct, this, Array, Byte
-from loguru import logger
+
+from src.CollectionManager.infrastructure.exceptions.parser import ParseError
 
 from .data_types import (
     String,
@@ -13,9 +14,6 @@ from .data_types import (
     Boolean,
     TimingPoint,
 )
-
-def get(obj, ctx):
-    logger.info(obj)
 
 BeatmapEntry = Struct(
     "artist" / String,
@@ -50,8 +48,8 @@ BeatmapEntry = Struct(
     "preview_time" / Int,
     "num_timing_points" / Int,
     "timing_points" / Array(this.num_timing_points, TimingPoint),
-    "difficulty_id" / Int,
-    "beatmap_id" / Int,
+    "bid" / Int,
+    "sid" / Int,
     "thread_id" / Int,
     "grade_std" / Byte,
     "grade_taiko" / Byte,
@@ -101,12 +99,14 @@ def parse_osu_db(data: bytes):
     try:
         result = osuDb.parse_stream(stream)
         return result
-    except:
+    except Exception as e:
         pos = stream.tell()
         start = max(0, pos - 64)
         end = min(len(data), pos + 64)
         snippet = data[start:end]
-        logger.error(f"Parse error at offset {pos} (0x{pos:X})")
-        logger.error(f"Context bytes [{start}:{end}] (hex):")
-        logger.error(binascii.hexlify(snippet).decode())
-        raise
+        context = binascii.hexlify(snippet).decode()
+        raise ParseError(
+            f"Failed to parse osu!.db at position {pos}. Context: {context}",
+            pos,
+            context=context,
+        ) from e

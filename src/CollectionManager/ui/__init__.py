@@ -1,5 +1,6 @@
 """Qt UI layer for CollectionManager."""
 
+from .exceptions import ViewModelError, ViewModelValidationError
 from .startup import StartupDialog
 from .windows import BeatmapListWindow, MainWindow
 from .widgets import BeatmapDetailWidget, BeatmapTableWidget, CollectionPickerDialog
@@ -25,4 +26,6 @@ __all__ = [
     "MainWindow",
     "MainWindowViewModel",
     "StartupDialog",
+    "ViewModelError",
+    "ViewModelValidationError",
 ]

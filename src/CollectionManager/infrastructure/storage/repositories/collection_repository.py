@@ -9,6 +9,7 @@ from sqlalchemy import func
 from sqlmodel import select
 
 from src.CollectionManager.domain.model import Collection
+from src.CollectionManager.infrastructure.exceptions.repository import CollectionNotFoundError
 
 from ..models import CollectionBeatmapRecord, CollectionRecord
 from ..sqlite_db import SqliteDB
@@ -44,21 +45,22 @@ class CollectionRepository:
 		"""Delete a collection and all its beatmap associations."""
 		with self._db.collection_meta_session() as meta_session, self._db.collection_relation_session() as relation_session:
 			meta_record = meta_session.get(CollectionRecord, name)
-			if meta_record is not None:
-				meta_session.delete(meta_record)
-				for record in relation_session.exec(
-					select(CollectionBeatmapRecord).where(cast(Any, CollectionBeatmapRecord.collection_name) == name)
-				).all():
-					relation_session.delete(record)
-				meta_session.commit()
-				relation_session.commit()
+			if meta_record is None:
+				raise CollectionNotFoundError(f"Collection '{name}' does not exist.", name)
+			meta_session.delete(meta_record)
+			for record in relation_session.exec(
+				select(CollectionBeatmapRecord).where(cast(Any, CollectionBeatmapRecord.collection_name) == name)
+			).all():
+				relation_session.delete(record)
+			meta_session.commit()
+			relation_session.commit()
 
-	def get(self, name: str) -> Collection | None:
+	def get(self, name: str) -> Collection:
 		"""Retrieve a collection by name, including its beatmap hashes."""
 		with self._db.collection_meta_session() as meta_session, self._db.collection_relation_session() as relation_session:
 			meta_record = meta_session.get(CollectionRecord, name)
 			if meta_record is None:
-				return None
+				raise CollectionNotFoundError(f"Collection '{name}' does not exist.", name)
 
 			relation_records = relation_session.exec(
 				select(CollectionBeatmapRecord)
@@ -105,15 +107,15 @@ class CollectionRepository:
 		with self._db.collection_meta_session() as meta_session:
 			return int(meta_session.exec(select(func.count()).select_from(CollectionRecord)).one())
 
-	def add_beatmaps(self, name: str, beatmap_hashes: Sequence[str]) -> Collection | None:
-		"""Add beatmaps to a collection. Raise ValueError if the collection does not exist."""
+	def add_beatmaps(self, name: str, beatmap_hashes: Sequence[str]) -> Collection:
+		"""Add beatmaps to a collection."""
 		if not beatmap_hashes:
 			return self.get(name)
 
 		with self._db.collection_meta_session() as meta_session, self._db.collection_relation_session() as relation_session:
 			meta_record = meta_session.get(CollectionRecord, name)
 			if meta_record is None:
-				raise ValueError(f"Collection '{name}' does not exist.")
+				raise CollectionNotFoundError(f"Collection '{name}' does not exist.", name)
 
 			existing = [
 				record
@@ -138,15 +140,15 @@ class CollectionRepository:
 			relation_session.commit()
 			return meta_record.to_domain(ordered_hashes)
 
-	def remove_beatmaps(self, name: str, beatmap_hashes: Sequence[str]) -> Collection | None:
-		"""Remove beatmaps from a collection. Return the updated collection"""
-		# if not beatmap_hashes:
-		# 	return self.get(name)
+	def remove_beatmaps(self, name: str, beatmap_hashes: Sequence[str]) -> Collection:
+		"""Remove beatmaps from a collection and return the updated collection."""
+		if not beatmap_hashes:
+			return self.get(name)
 
 		with self._db.collection_meta_session() as meta_session, self._db.collection_relation_session() as relation_session:
 			meta_record = meta_session.get(CollectionRecord, name)
 			if meta_record is None:
-				raise ValueError(f"Collection '{name}' does not exist.")
+				raise CollectionNotFoundError(f"Collection '{name}' does not exist.", name)
 
 			for record in relation_session.exec(
 				select(CollectionBeatmapRecord).where(cast(Any, CollectionBeatmapRecord.collection_name) == name)
@@ -176,15 +178,12 @@ class CollectionRepository:
 		with self._db.collection_meta_session() as meta_session:
 			return meta_session.get(CollectionRecord, name) is not None
 
-	def rename(self, old_name: str, new_name: str) -> Collection | None:
-		"""Rename a collection.
-		
-		Returns the renamed collection, or None if old_name does not exist.
-		"""
+	def rename(self, old_name: str, new_name: str) -> Collection:
+		"""Rename a collection and return the updated value."""
 		with self._db.collection_meta_session() as meta_session, self._db.collection_relation_session() as relation_session:
 			old_record = meta_session.get(CollectionRecord, old_name)
 			if old_record is None:
-				return None
+				raise CollectionNotFoundError(f"Collection '{old_name}' does not exist.", old_name)
 
 			# Update metadata
 			old_record.name = new_name

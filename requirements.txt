@@ -3,3 +3,4 @@ construct>=2.10,<3
 loguru>=0.7,<1
 sqlalchemy>=2.0,<3
 sqlmodel>=0.0.38,<0.1
+rosu-pp-py>=4.0.0,<4.1.0
