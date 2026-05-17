@@ -53,6 +53,29 @@ class CollectionService:
         except Exception as exc:
             raise ServiceOperationError(f"Failed to create collection '{name}'.") from exc
 
+    def import_collections(self, collections: Sequence[Collection]) -> list[Collection]:
+        """Create multiple collections efficiently while preserving duplicate-name checks."""
+
+        results = list(collections)
+        if not results:
+            return []
+
+        seen_names: set[str] = set()
+        for collection in results:
+            if collection.name in seen_names:
+                raise CollectionAlreadyExistsError(collection.name)
+            seen_names.add(collection.name)
+
+        try:
+            existing_names = self.collection_repository.existing_names([collection.name for collection in results])
+            if existing_names:
+                raise CollectionAlreadyExistsError(sorted(existing_names)[0])
+            return self.collection_repository.create_many(results)
+        except CollectionAlreadyExistsError:
+            raise
+        except Exception as exc:
+            raise ServiceOperationError("Failed to import collections.") from exc
+
     def delete_collection(self, name: str) -> None:
         """Delete a collection and its beatmap associations."""
 

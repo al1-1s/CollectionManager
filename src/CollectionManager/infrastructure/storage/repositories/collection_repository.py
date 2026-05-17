@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, cast
 
-from sqlalchemy import func
+from sqlalchemy import func, insert
 from sqlmodel import select
 
 from src.CollectionManager.domain.model import Collection
@@ -39,6 +39,35 @@ class CollectionRepository:
 				)
 			session.commit()
 		return value
+
+	def create_many(self, values: Sequence[Collection]) -> list[Collection]:
+		"""Create multiple collections and all of their relations in one transaction."""
+		results = list(values)
+		if not results:
+			return []
+
+		meta_rows = [
+			{"name": value.name, "count": len(value.hashes)}
+			for value in results
+		]
+		relation_rows = [
+			{
+				"collection_name": value.name,
+				"beatmap_hash": beatmap_hash,
+				"position": position,
+			}
+			for value in results
+			for position, beatmap_hash in enumerate(value.hashes)
+		]
+		meta_table = cast(Any, CollectionRecord).__table__
+		relation_table = cast(Any, CollectionBeatmapRecord).__table__
+
+		with self._db.collection_session() as session:
+			session.execute(insert(meta_table), meta_rows)
+			if relation_rows:
+				session.execute(insert(relation_table), relation_rows)
+			session.commit()
+		return results
 
 	def delete(self, name: str) -> None:
 		"""Delete a collection and all its beatmap associations."""
@@ -172,6 +201,18 @@ class CollectionRepository:
 		"""Check if a collection with the given name exists."""
 		with self._db.collection_session() as session:
 			return session.get(CollectionRecord, name) is not None
+
+	def existing_names(self, names: Sequence[str]) -> set[str]:
+		"""Return the subset of collection names that already exist."""
+		unique_names = list(dict.fromkeys(name for name in names if name))
+		if not unique_names:
+			return set()
+
+		with self._db.collection_session() as session:
+			rows = session.exec(
+				select(CollectionRecord.name).where(cast(Any, CollectionRecord.name).in_(unique_names))
+			).all()
+			return set(rows)
 
 	def rename(self, old_name: str, new_name: str) -> Collection:
 		"""Rename a collection and return the updated value."""

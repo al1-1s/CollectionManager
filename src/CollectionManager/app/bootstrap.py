@@ -99,8 +99,7 @@ def _load_collections(container: Container, collection_db_path: Path) -> int:
         raise DataImportError(collection_db_path, str(exc)) from exc
 
     try:
-        for collection in collections:
-            container.collection_service.create_collection(collection.name, collection.hashes)
+        container.collection_service.import_collections(collections)
         return len(collections)
     except ServiceOperationError as exc:
         raise ServiceOperationError(f"Failed to import collections from '{collection_db_path}'.") from exc
