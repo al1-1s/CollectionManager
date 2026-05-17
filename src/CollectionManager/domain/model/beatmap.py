@@ -19,8 +19,8 @@ class Beatmap:
     hp: float
     od: float
     total_time: int
-    difficulty_id: int
-    beatmap_id: int
+    bid: int
+    sid: int
     mode: int
     tags: str
     source: str
