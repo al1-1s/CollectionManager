@@ -71,16 +71,6 @@ class SqliteDB:
 		with Session(self._collection_engine) as session:
 			yield session
 
-	@contextmanager
-	def collection_meta_session(self) -> Iterator[Session]:
-		with self.collection_session() as session:
-			yield session
-
-	@contextmanager
-	def collection_relation_session(self) -> Iterator[Session]:
-		with self.collection_session() as session:
-			yield session
-
 	def reset(self) -> None:
 		"""Delete existing database files and recreate empty schemas."""
 
