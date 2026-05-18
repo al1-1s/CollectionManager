@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from pathlib import Path
 
 from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QDrag, QMouseEvent
@@ -50,8 +51,30 @@ def decode_beatmap_hashes(payload: bytes | bytearray | memoryview) -> list[str]:
     return [str(value) for value in values if str(value)]
 
 
+def extract_osz_paths_from_mime_data(mime_data: QMimeData) -> list[Path]:
+    if not mime_data.hasUrls():
+        return []
+
+    paths: list[Path] = []
+    seen: set[str] = set()
+    for url in mime_data.urls():
+        if not url.isLocalFile():
+            continue
+        path = Path(url.toLocalFile())
+        if path.suffix.lower() != ".osz":
+            continue
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        paths.append(path)
+    return paths
+
+
 class BeatmapTableWidget(QTableWidget):
     """Table widget for rendering beatmap rows with status information."""
+
+    oszFilesDropped = Signal(list)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(0, 3, parent)
@@ -75,6 +98,7 @@ class BeatmapTableWidget(QTableWidget):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
         self.setColumnWidth(0, 84)
         self.setColumnWidth(2, 160)
+        self.setAcceptDrops(True)
         self.setDragEnabled(True)
         self.setDragDropMode(QAbstractItemView.DragDropMode.DragOnly)
 
@@ -216,6 +240,27 @@ class BeatmapTableWidget(QTableWidget):
         drag = QDrag(self)
         drag.setMimeData(mime_data)
         drag.exec(Qt.DropAction.CopyAction)
+
+    def dragEnterEvent(self, event) -> None:
+        if extract_osz_paths_from_mime_data(event.mimeData()):
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event) -> None:
+        if extract_osz_paths_from_mime_data(event.mimeData()):
+            event.acceptProposedAction()
+            return
+        super().dragMoveEvent(event)
+
+    def dropEvent(self, event) -> None:
+        paths = extract_osz_paths_from_mime_data(event.mimeData())
+        if not paths:
+            event.ignore()
+            return
+
+        self.oszFilesDropped.emit(paths)
+        event.acceptProposedAction()
 
 
 class CollectionListWidget(QListWidget):

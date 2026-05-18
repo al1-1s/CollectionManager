@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from PySide6.QtCore import QTimer, Qt
@@ -37,7 +38,22 @@ from src.CollectionManager.app.dependency import Container
 from .exceptions import resolve_ui_error_message
 from .i18n import current_language, language_label, register_listener, set_language, tr
 from .viewmodels import BeatmapListViewModel, MainWindowViewModel, filter_beatmap_rows, filter_beatmapset_rows, sort_beatmap_rows
-from .widgets import BeatmapDetailWidget, BeatmapTableWidget, CollectionListWidget, CollectionPickerDialog
+from .widgets import BeatmapDetailWidget, BeatmapTableWidget, CollectionListWidget, CollectionPickerDialog, extract_osz_paths_from_mime_data
+
+
+def _normalize_osz_paths(paths: Sequence[str | Path]) -> list[Path]:
+    normalized_paths: list[Path] = []
+    seen: set[str] = set()
+    for raw_path in paths:
+        path = Path(raw_path)
+        if path.suffix.lower() != ".osz":
+            continue
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized_paths.append(path)
+    return normalized_paths
 
 
 class MainWindow(QMainWindow):
@@ -205,10 +221,13 @@ class MainWindow(QMainWindow):
 
     def _setup_menu(self) -> None:
         self._file_menu = self.menuBar().addMenu("")
+        self._import_beatmaps_action = QAction(self)
+        self._import_beatmaps_action.triggered.connect(self._import_beatmaps)
         self._import_action = QAction(self)
         self._import_action.triggered.connect(self._import_collections)
         self._export_action = QAction(self)
         self._export_action.triggered.connect(self._export_all_collections)
+        self._file_menu.addAction(self._import_beatmaps_action)
         self._file_menu.addAction(self._import_action)
         self._file_menu.addAction(self._export_action)
 
@@ -240,6 +259,7 @@ class MainWindow(QMainWindow):
     def _retranslate_ui(self) -> None:
         self.setWindowTitle(tr("app.title"))
         self._file_menu.setTitle(tr("menu.file"))
+        self._import_beatmaps_action.setText(tr("action.import_beatmaps"))
         self._import_action.setText(tr("action.import_collections"))
         self._export_action.setText(tr("action.export_collections"))
         self._beatmap_menu.setTitle(tr("menu.beatmap_list"))
@@ -651,6 +671,46 @@ class MainWindow(QMainWindow):
 
         QMessageBox.information(self, tr("main.dialog.title.prompt"), tr("main.status.collections_exported", count=len(names)))
 
+    def _reload_after_beatmap_import(self) -> None:
+        self._viewmodel.reload_collections(self._viewmodel.current_collection_name)
+        self._render_collections()
+        self._render_current_collection()
+        self._refresh_beatmap_window()
+
+    def _import_beatmap_packages(self, paths: Sequence[str | Path]) -> int | None:
+        target_paths = _normalize_osz_paths(paths)
+        if not target_paths:
+            return None
+
+        try:
+            beatmap_count = bootstrap.import_beatmap_packages(self._container, self._osu_dir, target_paths)
+        except Exception as exc:
+            self._show_operation_failure(
+                "main.dialog.title.import_beatmaps_failed",
+                exc,
+                f"Unexpected error while importing beatmap packages: {target_paths}",
+            )
+            return None
+
+        self._reload_after_beatmap_import()
+        self.statusBar().showMessage(
+            tr("main.status.beatmaps_imported", package_count=len(target_paths), beatmap_count=beatmap_count),
+            5000,
+        )
+        return beatmap_count
+
+    def _import_beatmaps(self) -> None:
+        paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            tr("main.dialog.title.import_beatmaps"),
+            "",
+            "osu! beatmap package (*.osz)",
+        )
+        if not paths:
+            return
+
+        self._import_beatmap_packages(paths)
+
     def _import_collections(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, tr("main.dialog.title.import_collections"), "", "osu! collection.db (*.db)")
         if not path:
@@ -700,7 +760,12 @@ class MainWindow(QMainWindow):
 
     def _open_beatmap_window(self) -> None:
         if self._beatmap_window is None:
-            self._beatmap_window = BeatmapListWindow(self._container, self._osu_dir, self)
+            self._beatmap_window = BeatmapListWindow(
+                self._container,
+                self._osu_dir,
+                self,
+                on_imported=self._reload_after_beatmap_import,
+            )
         self._beatmap_window.show()
         self._beatmap_window.raise_()
         self._beatmap_window.activateWindow()
@@ -742,19 +807,34 @@ class MainWindow(QMainWindow):
 class BeatmapListWindow(QMainWindow):
     """Secondary window for browsing and searching all beatmaps."""
 
-    def __init__(self, container: Container, osu_dir: Path, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        container: Container,
+        osu_dir: Path,
+        parent: QWidget | None = None,
+        on_imported: Callable[[], None] | None = None,
+    ) -> None:
         super().__init__(parent)
         self._container = container
         self._osu_dir = osu_dir
+        self._on_imported = on_imported
         self._viewmodel = BeatmapListViewModel(container.search_service, container.collection_service)
         self._beatmapset_filter_id: int | None = None
 
         self.resize(1400, 900)
+        self.setAcceptDrops(True)
 
         self._setup_ui()
         register_listener(self._retranslate_ui)
         self._retranslate_ui()
         self._run_search("")
+
+    def _show_operation_failure(self, title_key: str, exc: Exception, context: str) -> None:
+        QMessageBox.critical(
+            self,
+            tr(title_key),
+            resolve_ui_error_message(exc, tr("main.unexpected_error"), log_context=context),
+        )
 
     def _setup_ui(self) -> None:
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -816,6 +896,7 @@ class BeatmapListWindow(QMainWindow):
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
         self._table.itemClicked.connect(lambda *_: self._on_selection_changed())
         self._table.itemDoubleClicked.connect(self._on_item_double_clicked)
+        self._table.oszFilesDropped.connect(self._import_beatmap_packages)
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._show_beatmap_context_menu)
         layout.addWidget(self._table, 1)
@@ -871,6 +952,52 @@ class BeatmapListWindow(QMainWindow):
         self._viewmodel.search(query)
         self._render_results()
         self.statusBar().showMessage(tr("main.list.status.search_result", count=len(self._viewmodel.results)), 3000)
+
+    def _import_beatmap_packages(self, paths: Sequence[str | Path]) -> None:
+        target_paths = _normalize_osz_paths(paths)
+        if not target_paths:
+            return
+
+        try:
+            beatmap_count = bootstrap.import_beatmap_packages(self._container, self._osu_dir, target_paths)
+        except Exception as exc:
+            self._show_operation_failure(
+                "main.dialog.title.import_beatmaps_failed",
+                exc,
+                f"Unexpected error while importing beatmap packages into beatmap list: {target_paths}",
+            )
+            return
+
+        if self._on_imported is not None:
+            self._on_imported()
+        else:
+            self.refresh_from_storage()
+
+        self.statusBar().showMessage(
+            tr("main.status.beatmaps_imported", package_count=len(target_paths), beatmap_count=beatmap_count),
+            5000,
+        )
+
+    def dragEnterEvent(self, event) -> None:
+        if extract_osz_paths_from_mime_data(event.mimeData()):
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event) -> None:
+        if extract_osz_paths_from_mime_data(event.mimeData()):
+            event.acceptProposedAction()
+            return
+        super().dragMoveEvent(event)
+
+    def dropEvent(self, event) -> None:
+        paths = extract_osz_paths_from_mime_data(event.mimeData())
+        if not paths:
+            super().dropEvent(event)
+            return
+
+        self._import_beatmap_packages(paths)
+        event.acceptProposedAction()
 
     def _render_results(self) -> None:
         self._table.set_multiselect(self._multi_select.isChecked())

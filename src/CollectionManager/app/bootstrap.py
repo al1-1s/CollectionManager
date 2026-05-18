@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from loguru import logger
 from src.CollectionManager.app.dependency import Container
 from src.CollectionManager.app.logger import DEFAULT_LEVEL, init_logging
 from src.CollectionManager.domain.exceptions import DataImportError, ServiceError, ServiceOperationError
+from src.CollectionManager.domain.service.import_service import ImportService
 from src.CollectionManager.infrastructure.exceptions.parser import MissingFieldError, ParseError
 from src.CollectionManager.infrastructure.osu import (
     map_beatmap,
@@ -146,6 +148,32 @@ def load_initial_data(container: Container, osu_dir: str | Path) -> LoadSummary:
         raise
     except Exception as exc:
         raise ServiceOperationError(f"Failed to load data from '{osu_dir_path}'.") from exc
+
+# this may move to container if it grows importance
+def import_beatmap_packages(container: Container, osu_dir: str | Path, osz_paths: Sequence[str | Path]) -> int:
+    """Import beatmaps from standalone .osz packages into the current storage."""
+
+    paths = [Path(path) for path in osz_paths]
+    if not paths:
+        return 0
+
+    for path in paths:
+        if not path.exists():
+            raise DataImportError(path, "Missing required file.")
+        if path.suffix.lower() != ".osz":
+            raise DataImportError(path, "Expected a '.osz' beatmap package.")
+
+    import_service = ImportService(container.beatmap_repository, osu_dir)
+    try:
+        count = import_service.import_osz_many(paths)
+        logger.info(f"Imported {count} beatmaps from {len(paths)} .osz packages")
+        return count
+    except ServiceError:
+        raise
+    except Exception as exc:
+        raise ServiceOperationError("Failed to import beatmap packages.") from exc
+    finally:
+        import_service.cleanup()
 
 
 def import_collection_db(container: Container, collection_db_path: str | Path) -> int:

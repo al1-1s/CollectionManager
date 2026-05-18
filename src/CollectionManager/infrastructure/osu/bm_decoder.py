@@ -6,7 +6,16 @@ import rosu_pp_py as rosu # for sr calculation
 from src.CollectionManager.domain.model.beatmap import Beatmap
 from src.CollectionManager.infrastructure.exceptions.parser import BeatmapDecodeError, MissingFieldError
 
+
+UNIX_EPOCH_TICKS = 621355968000000000
+
 class BeatmapDecoder:
+    DEFAULT = {
+        "tags": "",
+        "source": "",
+        "creator": "",
+        "version": "",
+    }
     REQUIRED_FIELDS = [
         "artist",
         "artist_unicode",
@@ -54,6 +63,10 @@ class BeatmapDecoder:
         if not isinstance(value, float):
             raise TypeError(f"Field '{key}' must be a float.")
         return value
+
+    @staticmethod
+    def _path_last_modified_ticks(path: Path) -> int:
+        return UNIX_EPOCH_TICKS + (path.stat().st_mtime_ns // 100)
 
     def decode(self, beatmap_path: Path) -> Beatmap:
         path = Path(beatmap_path)
@@ -137,8 +150,10 @@ class BeatmapDecoder:
         meta["osu_file_name"] = path.name
         meta["folder_name"] = path.parent.name
         meta["ranked_status"] = 0
-        meta["last_modified"] = int(path.stat().st_mtime)
-
+        meta["last_modified"] = self._path_last_modified_ticks(path)
+        for key, default_value in self.DEFAULT.items():
+            if key not in meta:
+                meta[key] = default_value
         for field in self.REQUIRED_FIELDS:
             if field not in meta:
                 raise MissingFieldError(
