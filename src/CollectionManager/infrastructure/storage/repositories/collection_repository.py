@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, cast
 
-from sqlalchemy import func, insert
+from sqlalchemy import delete, func, insert, update
 from sqlmodel import select
 
 from src.CollectionManager.domain.model import Collection
@@ -24,6 +24,27 @@ class CollectionRepository:
 
 	def __init__(self, db: SqliteDB) -> None:
 		self._db = db
+
+	def _load_collections(self, meta_records: Sequence[CollectionRecord]) -> list[Collection]:
+		if not meta_records:
+			return []
+
+		names = [record.name for record in meta_records]
+		with self._db.collection_session() as session:
+			relation_records = session.exec(
+				select(CollectionBeatmapRecord)
+				.where(cast(Any, CollectionBeatmapRecord.collection_name).in_(names))
+				.order_by(
+					cast(Any, CollectionBeatmapRecord.collection_name),
+					cast(Any, CollectionBeatmapRecord.position),
+				)
+			).all()
+
+		hashes_by_name: dict[str, list[str]] = {}
+		for relation_record in relation_records:
+			hashes_by_name.setdefault(relation_record.collection_name, []).append(relation_record.beatmap_hash)
+
+		return [meta_record.to_domain(hashes_by_name.get(meta_record.name, [])) for meta_record in meta_records]
 
 	def create(self, value: Collection) -> Collection:
 		"""Create a collection and store its initial hash ordering."""
@@ -46,10 +67,7 @@ class CollectionRepository:
 		if not results:
 			return []
 
-		meta_rows = [
-			{"name": value.name, "count": len(value.hashes)}
-			for value in results
-		]
+		meta_rows = [{"name": value.name} for value in results]
 		relation_rows = [
 			{
 				"collection_name": value.name,
@@ -75,11 +93,10 @@ class CollectionRepository:
 			meta_record = session.get(CollectionRecord, name)
 			if meta_record is None:
 				raise CollectionNotFoundError(f"Collection '{name}' does not exist.", name)
+			session.exec(
+				delete(CollectionBeatmapRecord).where(cast(Any, CollectionBeatmapRecord.collection_name) == name)
+			)
 			session.delete(meta_record)
-			for record in session.exec(
-				select(CollectionBeatmapRecord).where(cast(Any, CollectionBeatmapRecord.collection_name) == name)
-			).all():
-				session.delete(record)
 			session.commit()
 
 	def get(self, name: str) -> Collection:
@@ -94,7 +111,6 @@ class CollectionRepository:
 				.where(cast(Any, CollectionBeatmapRecord.collection_name) == name)
 				.order_by(cast(Any, CollectionBeatmapRecord.position))
 			).all()
-			relation_records = sorted(relation_records, key=lambda record: record.position)
 			hashes = [record.beatmap_hash for record in relation_records]
 			return meta_record.to_domain(hashes)
 
@@ -102,30 +118,21 @@ class CollectionRepository:
 		"""List all collections."""
 		with self._db.collection_session() as session:
 			meta_records = session.exec(select(CollectionRecord)).all()
+		return self._load_collections(meta_records)
 
-			if not meta_records:
-				return []
+	def search(self, query: str, limit: int | None = None) -> list[Collection]:
+		"""Search collections by name using a case-insensitive substring match."""
 
-			relation_records = session.exec(
-				select(CollectionBeatmapRecord).where(
-					cast(Any, CollectionBeatmapRecord.collection_name).in_([record.name for record in meta_records])
-				)
-			).all()
+		needle = query.strip().lower()
+		statement = select(CollectionRecord).order_by(func.lower(cast(Any, CollectionRecord.name)))
+		if needle:
+			statement = statement.where(func.lower(cast(Any, CollectionRecord.name)).contains(needle))
+		if limit is not None:
+			statement = statement.limit(limit)
 
-		hashes_by_name: dict[str, list[tuple[int, str]]] = {}
-		for relation_record in relation_records:
-			hashes_by_name.setdefault(relation_record.collection_name, []).append(
-				(relation_record.position, relation_record.beatmap_hash)
-			)
-
-		collections: list[Collection] = []
-		for meta_record in meta_records:
-			ordered_hashes = [
-				hash_value
-				for _, hash_value in sorted(hashes_by_name.get(meta_record.name, []), key=lambda item: item[0])
-			]
-			collections.append(meta_record.to_domain(ordered_hashes))
-		return collections
+		with self._db.collection_session() as session:
+			meta_records = session.exec(statement).all()
+		return self._load_collections(meta_records)
 
 	def count(self) -> int:
 		"""Return the number of stored collections."""
@@ -160,8 +167,6 @@ class CollectionRepository:
 				known_hashes.add(beatmap_hash)
 				ordered_hashes.append(beatmap_hash)
 				position += 1
-			meta_record.count = len(ordered_hashes)
-			session.add(meta_record)
 			session.commit()
 			return meta_record.to_domain(ordered_hashes)
 
@@ -192,8 +197,6 @@ class CollectionRepository:
 			for position, record in enumerate(remaining):
 				record.position = position
 				session.add(record)
-			meta_record.count = len(remaining)
-			session.add(meta_record)
 			session.commit()
 			return meta_record.to_domain([record.beatmap_hash for record in remaining])
 
@@ -221,18 +224,21 @@ class CollectionRepository:
 			if old_record is None:
 				raise CollectionNotFoundError(f"Collection '{old_name}' does not exist.", old_name)
 
-			# Update metadata
 			old_record.name = new_name
 			session.add(old_record)
-
-			# Update all relation records
-			for record in session.exec(select(CollectionBeatmapRecord)).all():
-				if record.collection_name == old_name:
-					record.collection_name = new_name
-					session.add(record)
+			session.exec(
+				update(CollectionBeatmapRecord)
+				.where(cast(Any, CollectionBeatmapRecord.collection_name) == old_name)
+				.values(collection_name=new_name)
+			)
 			session.commit()
 
-			return self.get(new_name)
+			relation_records = session.exec(
+				select(CollectionBeatmapRecord)
+				.where(cast(Any, CollectionBeatmapRecord.collection_name) == new_name)
+				.order_by(cast(Any, CollectionBeatmapRecord.position))
+			).all()
+			return old_record.to_domain([record.beatmap_hash for record in relation_records])
 
 	def is_beatmap_in_collection(self, collection_name: str, beatmap_hash: str) -> bool:
 		"""Check if a beatmap hash is part of a collection."""
