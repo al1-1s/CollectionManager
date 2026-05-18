@@ -54,15 +54,14 @@ class CollectionRecord(SQLModel, table=True):
 	__tablename__: ClassVar[str] = "collections"
 
 	name: str = Field(primary_key=True, index=True)
-	count: int = Field(default=0)
 
 	@classmethod
 	def from_domain(cls, value: Collection) -> "CollectionRecord":
-		return cls(name=value.name, count=len(value.hashes))
+		return cls(name=value.name)
 
 	def to_domain(self, hashes: Iterable[str]) -> Collection:
 		hash_list = list(hashes)
-		return Collection(name=self.name, count=len(hash_list), hashes=hash_list)
+		return Collection(name=self.name, hashes=hash_list)
 
 
 class CollectionBeatmapRecord(SQLModel, table=True):

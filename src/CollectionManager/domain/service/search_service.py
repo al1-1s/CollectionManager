@@ -167,14 +167,7 @@ class SearchService:
     def search_collections(self, query: str, limit: int | None = None) -> list[Collection]:
         """Search collections by name using a case-insensitive substring match."""
 
-        needle = query.strip().casefold()
         try:
-            collections = self._collection_repo.list()
+            return self._collection_repo.search(query, limit=limit)
         except Exception as exc:
             raise ServiceOperationError("Failed to search collections.") from exc
-        if needle:
-            collections = [collection for collection in collections if needle in collection.name.casefold()]
-        collections.sort(key=lambda collection: collection.name.casefold())
-        if limit is not None:
-            return collections[:limit]
-        return collections

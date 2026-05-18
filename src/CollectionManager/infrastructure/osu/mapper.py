@@ -70,6 +70,5 @@ def map_collection(raw: Any) -> Collection:
     hashes = list(_get(raw, "map_hashes", []) or [])
     return Collection(
         name=_get(raw, "name", ""),
-        count=int(_get(raw, "map_count", len(hashes))),
         hashes=hashes,
     )

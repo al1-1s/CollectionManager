@@ -29,14 +29,12 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QTableWidgetItem,
 )
-from loguru import logger
 
 from src.CollectionManager.app import bootstrap
 from src.CollectionManager.app.bootstrap import LoadSummary
 from src.CollectionManager.app.dependency import Container
-from src.CollectionManager.domain.exceptions import ServiceError
 
-from .exceptions import ViewModelError
+from .exceptions import resolve_ui_error_message
 from .i18n import current_language, language_label, register_listener, set_language, tr
 from .viewmodels import BeatmapListViewModel, MainWindowViewModel, filter_beatmap_rows, filter_beatmapset_rows, sort_beatmap_rows
 from .widgets import BeatmapDetailWidget, BeatmapTableWidget, CollectionListWidget, CollectionPickerDialog
@@ -68,11 +66,11 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(tr("main.status.loaded", beatmaps_loaded=startup_summary.beatmaps_loaded, collections_loaded=startup_summary.collections_loaded, osu_dir=osu_dir), 8000)
 
     def _show_operation_failure(self, title_key: str, exc: Exception, context: str) -> None:
-        if isinstance(exc, (ServiceError, ViewModelError)):
-            QMessageBox.critical(self, tr(title_key), str(exc))
-            return
-        logger.exception(context)
-        QMessageBox.critical(self, tr(title_key), tr("main.unexpected_error"))
+        QMessageBox.critical(
+            self,
+            tr(title_key),
+            resolve_ui_error_message(exc, tr("main.unexpected_error"), log_context=context),
+        )
 
     def _setup_ui(self) -> None:
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -517,7 +515,6 @@ class MainWindow(QMainWindow):
             tr("main.status.beatmaps_added", collection_name=collection_name, count=len(hashes)),
             4000,
         )
-        self._refresh_beatmap_window()
 
     def _create_collection(self) -> None:
         try:

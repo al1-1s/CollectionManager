@@ -7,7 +7,6 @@ from collections.abc import Sequence
 
 from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QDrag, QMouseEvent
-from loguru import logger
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -26,10 +25,9 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import QItemSelectionModel, QMimeData
 
-from src.CollectionManager.domain.exceptions import ServiceError
 from src.CollectionManager.domain.service import CollectionService
 
-from .exceptions import ViewModelError
+from .exceptions import resolve_ui_error_message
 from .i18n import register_listener, tr
 from .viewmodels import BeatmapRow, CollectionPickerViewModel
 
@@ -393,11 +391,15 @@ class CollectionPickerDialog(QDialog):
         return list(self._selected_collections)
 
     def _show_operation_failure(self, exc: Exception) -> None:
-        if isinstance(exc, (ServiceError, ViewModelError)):
-            QMessageBox.critical(self, tr("main.dialog.title.select_target"), str(exc))
-            return
-        logger.exception("Unexpected error while applying collection picker selection")
-        QMessageBox.critical(self, tr("main.dialog.title.select_target"), tr("main.unexpected_error"))
+        QMessageBox.critical(
+            self,
+            tr("main.dialog.title.select_target"),
+            resolve_ui_error_message(
+                exc,
+                tr("main.unexpected_error"),
+                log_context="Unexpected error while applying collection picker selection",
+            ),
+        )
 
     def _retranslate_ui(self) -> None:
         self.setWindowTitle(tr("main.dialog.title.select_target"))

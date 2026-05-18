@@ -9,8 +9,9 @@ from loguru import logger
 
 from src.CollectionManager.app.bootstrap import load_initial_data, summarize_current_data
 from src.CollectionManager.app.dependency import Container
-from src.CollectionManager.domain.exceptions import CachedBeatmapDatabaseNotFoundError, ServiceError
+from src.CollectionManager.domain.exceptions import CachedBeatmapDatabaseNotFoundError
 
+from .exceptions import resolve_ui_error_message
 from .i18n import current_language, language_label, register_listener, set_language, tr
 from .windows import MainWindow
 
@@ -120,12 +121,14 @@ class StartupDialog(QDialog):
             self._window_registry.append(self._main_window)
             self._main_window.show()
             self.accept()
-        except ServiceError as exc:
-            logger.warning(f"Startup load failed for {osu_dir}: {exc}")
-            self._show_load_failure(str(exc))
         except Exception as exc:
-            logger.exception(f"Failed to load data from osu! directory {osu_dir}")
-            self._show_load_failure(tr("startup.unexpected_error"))
+            self._show_load_failure(
+                resolve_ui_error_message(
+                    exc,
+                    tr("startup.unexpected_error"),
+                    log_context=f"Failed to load data from osu! directory {osu_dir}",
+                )
+            )
 
     def _cancel(self) -> None:
         self.reject()
