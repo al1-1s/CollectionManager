@@ -85,6 +85,7 @@ class QueryParser:
             op = ':'
 
         if field == "unplayed":
+            # currently Beatmap doesn't track play status, so this is a placeholder for future functionality
             return field, True
 
         if op in (">=", "<=", ">", "<", "!="):

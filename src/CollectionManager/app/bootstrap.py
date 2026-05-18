@@ -12,8 +12,12 @@ from src.CollectionManager.app.dependency import Container
 from src.CollectionManager.app.logger import DEFAULT_LEVEL, init_logging
 from src.CollectionManager.domain.exceptions import DataImportError, ServiceError, ServiceOperationError
 from src.CollectionManager.infrastructure.exceptions.parser import MissingFieldError, ParseError
-from src.CollectionManager.infrastructure.osu import collection as collection_structure
-from src.CollectionManager.infrastructure.osu import map_beatmap, map_collection, osuDb
+from src.CollectionManager.infrastructure.osu import (
+    map_beatmap,
+    map_collection,
+    parse_collection_db_stream,
+    parse_osu_db_stream,
+)
 from src.CollectionManager.infrastructure.storage import BeatmapRepository, CollectionRepository, SqliteDB
 
 
@@ -74,7 +78,7 @@ def init_app(debug: bool | None = None, create_schema: bool = True) -> Container
 def _load_beatmaps(container: Container, osu_db_path: Path) -> int:
     try:
         with osu_db_path.open("rb") as handle:
-            raw_osu = osuDb.parse_stream(handle)
+            raw_osu = parse_osu_db_stream(handle)
         beatmaps = [map_beatmap(entry) for entry in raw_osu.beatmaps]
     except Exception as exc:
         raise DataImportError(osu_db_path, str(exc)) from exc
@@ -93,7 +97,7 @@ def _load_beatmaps(container: Container, osu_db_path: Path) -> int:
 def _load_collections(container: Container, collection_db_path: Path) -> int:
     try:
         with collection_db_path.open("rb") as handle:
-            raw_collection = collection_structure.parse_stream(handle)
+            raw_collection = parse_collection_db_stream(handle)
         collections = [map_collection(entry) for entry in raw_collection.collections]
     except Exception as exc:
         raise DataImportError(collection_db_path, str(exc)) from exc

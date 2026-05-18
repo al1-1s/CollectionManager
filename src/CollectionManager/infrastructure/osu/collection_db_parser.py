@@ -1,3 +1,6 @@
+from functools import lru_cache
+from typing import BinaryIO
+
 from .data_types import String, Int
 from construct import Struct, this, Array
 
@@ -15,13 +18,22 @@ collection = Struct(
     "collections" / Array(this.collection_count, collectionEntry),
 )
 
+
+@lru_cache(maxsize=1)
+def get_compiled_collection_db():
+    return collection.compile()
+
+
+def parse_collection_db_stream(stream: BinaryIO):
+    return get_compiled_collection_db().parse_stream(stream)
+
 def parse_collection_db(data: bytes):
     from io import BytesIO
     import binascii
 
     stream = BytesIO(data)
     try:
-        result = collection.parse_stream(stream)
+        result = parse_collection_db_stream(stream)
         return result
     except Exception as e:
         pos = stream.tell()

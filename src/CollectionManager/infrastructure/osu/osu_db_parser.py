@@ -1,3 +1,6 @@
+from functools import lru_cache
+from typing import BinaryIO
+
 from construct import Struct, this, Array, Byte
 
 from src.CollectionManager.infrastructure.exceptions.parser import ParseError
@@ -91,13 +94,22 @@ osuDb = Struct(
     "user_permission" / Int
 )
 
+
+@lru_cache(maxsize=1)
+def get_compiled_osu_db():
+    return osuDb.compile()
+
+
+def parse_osu_db_stream(stream: BinaryIO):
+    return get_compiled_osu_db().parse_stream(stream)
+
 def parse_osu_db(data: bytes):
     from io import BytesIO
     import binascii
 
     stream = BytesIO(data)
     try:
-        result = osuDb.parse_stream(stream)
+        result = parse_osu_db_stream(stream)
         return result
     except Exception as e:
         pos = stream.tell()
