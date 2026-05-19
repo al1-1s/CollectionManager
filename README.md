@@ -53,6 +53,26 @@ pip install -r requirements.txt
 python -m src.CollectionManager.app.main
 ```
 
+## 可选 Rust Parser
+
+项目现在保留了原有 Python parser，同时预留了一个可选的 Rust 后端，用于后续平滑迁移 `osu!.db` / `collection.db` 解析逻辑并提升性能。
+
+- Rust crate 位于 `rust/collection_manager_rust_parser`
+- 如果本地没有编译好的 Rust 扩展，程序会自动回退到当前的 Python parser
+- 如果你想临时禁用 Rust parser，可以设置环境变量 `COLLECTION_MANAGER_USE_PYTHON_PARSER=1`
+
+本地编译 Rust parser 的一种方式：
+
+```powershell
+.venv\Scripts\Activate.ps1
+pip install maturin
+cd rust\collection_manager_rust_parser
+maturin develop --release
+cd ..\..
+```
+
+编译成功后，源码运行和测试会优先使用 Rust parser；未编译时则继续走现有 Python 实现，因此可以逐步替换、逐步验收。
+
 ## 首次启动
 
 程序启动后会先显示一个启动窗口。
