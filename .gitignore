@@ -8,3 +8,5 @@ build/
 .pytest_cache/
 
 *.pyc
+rust/collection_manager_rust_parser/target/
+rust/collection_manager_rust_parser/Cargo.lock
