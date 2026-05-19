@@ -3,10 +3,10 @@ data/
 logs/
 __pycache__/
 tmp/
-test/
 build/
 .pytest_cache/
-
 *.pyc
+*.osz
+
 rust/collection_manager_rust_parser/target/
 rust/collection_manager_rust_parser/Cargo.lock

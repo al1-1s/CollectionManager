@@ -1,0 +1,7 @@
+# This is a suggestion for the content of .osz file used in slow test
+
+sample_1.osz: a full ranked spread.
+sample_2.osz: a single difficulty ranked set, with video.
+sample_3.osz: a full ranked spread, with storyboard.
+sample_4.osz: a loved mappack with multiple audio files used.
+sample_5.osz: a mapset without any source or tags.
