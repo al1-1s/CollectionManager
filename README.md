@@ -55,7 +55,7 @@ python -m src.CollectionManager.app.main
 
 ## 可选 Rust Parser
 
-项目现在保留了原有 Python parser，同时预留了一个可选的 Rust 后端，用于后续平滑迁移 `osu!.db` / `collection.db` 解析逻辑并提升性能。
+项目现在支持 Rust 编写的 .db 解析器，性能更好，稳定性更高。
 
 - Rust crate 位于 `rust/collection_manager_rust_parser`
 - 如果本地没有编译好的 Rust 扩展，程序会自动回退到当前的 Python parser
@@ -71,7 +71,7 @@ maturin develop --release
 cd ..\..
 ```
 
-编译成功后，源码运行和测试会优先使用 Rust parser；未编译时则继续走现有 Python 实现，因此可以逐步替换、逐步验收。
+编译成功后，源码运行和测试会优先使用 Rust parser；未编译时则继续使用现有 Python parser。
 
 ## 首次启动
 
