@@ -87,7 +87,7 @@ def _load_beatmaps(container: Container, osu_db_path: Path) -> int:
 
     try:
         container.collection_service.add_beatmaps(beatmaps)
-        return len(beatmaps)
+        return len({beatmap.md5_hash for beatmap in beatmaps})
     except ServiceOperationError as exc:
         raise ServiceOperationError(f"Failed to import beatmaps from '{osu_db_path}'.") from exc
     except ServiceError as exc:
