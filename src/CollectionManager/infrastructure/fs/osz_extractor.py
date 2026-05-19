@@ -1,4 +1,4 @@
-import os
+import shutil
 import zipfile
 from pathlib import Path
 
@@ -21,14 +21,11 @@ class OszExtractor:
         
     
     def cleanup(self):
-        # Remove all files in the output directory
+        # Remove extracted archives recursively so storyboard/video subfolders do not block cleanup.
+        if not self.output_path.exists():
+            return
         for item in self.output_path.iterdir():
             if item.is_file():
                 item.unlink()
             elif item.is_dir():
-                for sub_item in item.iterdir():
-                    if sub_item.is_file():
-                        sub_item.unlink()
-                    elif sub_item.is_dir():
-                        os.rmdir(sub_item)
-                os.rmdir(item)
+                shutil.rmtree(item)
