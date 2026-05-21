@@ -11,9 +11,8 @@ from loguru import logger
 
 from src.CollectionManager.app.dependency import Container
 from src.CollectionManager.app.logger import DEFAULT_LEVEL, init_logging
-from src.CollectionManager.domain.exceptions import DataImportError, ServiceError, ServiceOperationError
+from src.CollectionManager.domain.exceptions import ServiceDataError, ServiceError, ServiceOperationError
 from src.CollectionManager.domain.service import ImportService
-from src.CollectionManager.infrastructure.exceptions.parser import MissingFieldError, ParseError
 from src.CollectionManager.infrastructure.osu import (
     map_beatmap,
     map_collection,
@@ -21,6 +20,10 @@ from src.CollectionManager.infrastructure.osu import (
     parse_osu_db_stream,
 )
 from src.CollectionManager.infrastructure.storage import BeatmapRepository, CollectionRepository, SqliteDB
+
+
+def _data_import_error(source_path: Path, detail: str) -> ServiceDataError:
+    return ServiceDataError(f"Failed to import data from '{source_path}': {detail}")
 
 
 @dataclass(slots=True)
@@ -83,7 +86,7 @@ def _load_beatmaps(container: Container, osu_db_path: Path) -> int:
             raw_osu = parse_osu_db_stream(handle)
         beatmaps = [map_beatmap(entry) for entry in raw_osu.beatmaps]
     except Exception as exc:
-        raise DataImportError(osu_db_path, str(exc)) from exc
+        raise _data_import_error(osu_db_path, str(exc)) from exc
 
     try:
         container.collection_service.add_beatmaps(beatmaps)
@@ -91,7 +94,7 @@ def _load_beatmaps(container: Container, osu_db_path: Path) -> int:
     except ServiceOperationError as exc:
         raise ServiceOperationError(f"Failed to import beatmaps from '{osu_db_path}'.") from exc
     except ServiceError as exc:
-        raise DataImportError(osu_db_path, str(exc)) from exc
+        raise _data_import_error(osu_db_path, str(exc)) from exc
     except Exception as exc:
         raise ServiceOperationError(f"Failed to import beatmaps from '{osu_db_path}'.") from exc
 
@@ -102,7 +105,7 @@ def _load_collections(container: Container, collection_db_path: Path) -> int:
             raw_collection = parse_collection_db_stream(handle)
         collections = [map_collection(entry) for entry in raw_collection.collections]
     except Exception as exc:
-        raise DataImportError(collection_db_path, str(exc)) from exc
+        raise _data_import_error(collection_db_path, str(exc)) from exc
 
     try:
         container.collection_service.import_collections(collections)
@@ -110,7 +113,7 @@ def _load_collections(container: Container, collection_db_path: Path) -> int:
     except ServiceOperationError as exc:
         raise ServiceOperationError(f"Failed to import collections from '{collection_db_path}'.") from exc
     except ServiceError as exc:
-        raise DataImportError(collection_db_path, str(exc)) from exc
+        raise _data_import_error(collection_db_path, str(exc)) from exc
     except Exception as exc:
         raise ServiceOperationError(f"Failed to import collections from '{collection_db_path}'.") from exc
 
@@ -123,7 +126,7 @@ def load_initial_data(container: Container, osu_dir: str | Path) -> LoadSummary:
     collection_db_path = osu_dir_path / "collection.db"
 
     if not osu_db_path.exists():
-        raise DataImportError(osu_db_path, "Missing required file 'osu!.db'.")
+        raise _data_import_error(osu_db_path, "Missing required file 'osu!.db'.")
 
     try:
         container.db.reset()
@@ -159,9 +162,9 @@ def import_beatmap_packages(container: Container, osu_dir: str | Path, osz_paths
 
     for path in paths:
         if not path.exists():
-            raise DataImportError(path, "Missing required file.")
+            raise _data_import_error(path, "Missing required file.")
         if path.suffix.lower() != ".osz":
-            raise DataImportError(path, "Expected a '.osz' beatmap package.")
+            raise _data_import_error(path, "Expected a '.osz' beatmap package.")
 
     import_service = ImportService(container.beatmap_repository, osu_dir)
     try:
@@ -181,7 +184,7 @@ def import_collection_db(container: Container, collection_db_path: str | Path) -
 
     path = Path(collection_db_path)
     if not path.exists():
-        raise DataImportError(path, "Missing required file 'collection.db'.")
+        raise _data_import_error(path, "Missing required file 'collection.db'.")
     try:
         count = _load_collections(container, path)
         logger.info(f"Imported {count} collections from {path}")

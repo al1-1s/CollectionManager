@@ -4,18 +4,14 @@ from pathlib import Path
 from loguru import logger
 
 from src.CollectionManager.domain.exceptions import (
-    BeatmapServiceNotFoundError,
-    CollectionAlreadyExistsError,
-    CollectionExportError,
-    CollectionServiceNotFoundError,
+    ServiceConflictError,
+    ServiceDataError,
+    ServiceNotFoundError,
     ServiceOperationError,
     ServiceValidationError,
 )
 from src.CollectionManager.infrastructure import CollectionDbWriter
-from src.CollectionManager.infrastructure.exceptions.repository import (
-    BeatmapNotFoundError as RepositoryBeatmapNotFoundError,
-    CollectionNotFoundError as RepositoryCollectionNotFoundError,
-)
+from src.CollectionManager.infrastructure.exceptions.repository import RepositoryNotFoundError
 from src.CollectionManager.infrastructure.storage import BeatmapRepository, CollectionRepository
 
 from ..model import Beatmap, Collection
@@ -41,8 +37,8 @@ class CollectionService:
     def _require_collection(self, name: str) -> Collection:
         try:
             return self.collection_repository.get(name)
-        except RepositoryCollectionNotFoundError as exc:
-            error = CollectionServiceNotFoundError(name)
+        except RepositoryNotFoundError as exc:
+            error = ServiceNotFoundError(str(exc))
             self._log_expected_failure(f"Failed to load collection '{name}'", error)
             raise error from exc
         except Exception as exc:
@@ -56,21 +52,21 @@ class CollectionService:
             self._log_unexpected_failure("Failed to validate beatmap hashes.")
             raise ServiceOperationError("Failed to validate beatmap hashes.") from exc
         if missing_hashes:
-            error = BeatmapServiceNotFoundError(missing_hashes[0])
+            error = ServiceNotFoundError(f"Beatmap with hash '{missing_hashes[0]}' does not exist.")
             self._log_expected_failure("Failed to validate beatmap hashes", error)
             raise error
 
     def create_collection(self, name: str, beatmap_hashes: list[str]) -> Collection:
         try:
             if self.collection_repository.exists(name):
-                error = CollectionAlreadyExistsError(name)
+                error = ServiceConflictError(f"Collection '{name}' already exists.")
                 self._log_expected_failure(f"Failed to create collection '{name}'", error)
                 raise error
             collection = Collection(name=name, hashes=list(beatmap_hashes))
             created_collection = self.collection_repository.create(collection)
             self._log_info(f"Created collection '{name}' with {len(created_collection.hashes)} beatmaps.")
             return created_collection
-        except CollectionAlreadyExistsError:
+        except ServiceConflictError:
             raise
         except Exception as exc:
             self._log_unexpected_failure(f"Failed to create collection '{name}'.")
@@ -86,7 +82,7 @@ class CollectionService:
         seen_names: set[str] = set()
         for collection in results:
             if collection.name in seen_names:
-                error = CollectionAlreadyExistsError(collection.name)
+                error = ServiceConflictError(f"Collection '{collection.name}' already exists.")
                 self._log_expected_failure("Failed to import collections", error)
                 raise error
             seen_names.add(collection.name)
@@ -94,11 +90,11 @@ class CollectionService:
         try:
             existing_names = self.collection_repository.existing_names([collection.name for collection in results])
             if existing_names:
-                error = CollectionAlreadyExistsError(sorted(existing_names)[0])
+                error = ServiceConflictError(f"Collection '{sorted(existing_names)[0]}' already exists.")
                 self._log_expected_failure("Failed to import collections", error)
                 raise error
             return self.collection_repository.create_many(results)
-        except CollectionAlreadyExistsError:
+        except ServiceConflictError:
             raise
         except Exception as exc:
             self._log_unexpected_failure("Failed to import collections.")
@@ -110,8 +106,8 @@ class CollectionService:
         try:
             self.collection_repository.delete(name)
             self._log_info(f"Deleted collection '{name}'.")
-        except RepositoryCollectionNotFoundError as exc:
-            error = CollectionServiceNotFoundError(name)
+        except RepositoryNotFoundError as exc:
+            error = ServiceNotFoundError(str(exc))
             self._log_expected_failure(f"Failed to delete collection '{name}'", error)
             raise error from exc
         except Exception as exc:
@@ -123,8 +119,8 @@ class CollectionService:
 
         try:
             self.beatmap_repository.delete(beatmap_hash)
-        except RepositoryBeatmapNotFoundError as exc:
-            error = BeatmapServiceNotFoundError(beatmap_hash)
+        except RepositoryNotFoundError as exc:
+            error = ServiceNotFoundError(str(exc))
             self._log_expected_failure(f"Failed to delete beatmap '{beatmap_hash}'", error)
             raise error from exc
         except Exception as exc:
@@ -140,16 +136,16 @@ class CollectionService:
             raise error
         try:
             if self.collection_repository.exists(new_name):
-                error = CollectionAlreadyExistsError(new_name)
+                error = ServiceConflictError(f"Collection '{new_name}' already exists.")
                 self._log_expected_failure(f"Failed to rename collection '{old_name}'", error)
                 raise error
             renamed_collection = self.collection_repository.rename(old_name, new_name)
             self._log_info(f"Renamed collection '{old_name}' to '{new_name}'.")
             return renamed_collection
-        except CollectionAlreadyExistsError:
+        except ServiceConflictError:
             raise
-        except RepositoryCollectionNotFoundError as exc:
-            error = CollectionServiceNotFoundError(old_name)
+        except RepositoryNotFoundError as exc:
+            error = ServiceNotFoundError(str(exc))
             self._log_expected_failure(f"Failed to rename collection '{old_name}'", error)
             raise error from exc
         except Exception as exc:
@@ -182,13 +178,13 @@ class CollectionService:
         """Add beatmaps to a collection."""
 
         self._require_collection(name)
-        self._require_beatmaps(beatmap_hashes)
+        # self._require_beatmaps(beatmap_hashes) # Missing hashes is allowed
         try:
             updated_collection = self.collection_repository.add_beatmaps(name, beatmap_hashes)
             self._log_info(f"Added {len(beatmap_hashes)} beatmaps to collection '{name}'.")
             return updated_collection
-        except RepositoryCollectionNotFoundError as exc:
-            error = CollectionServiceNotFoundError(name)
+        except RepositoryNotFoundError as exc:
+            error = ServiceNotFoundError(str(exc))
             self._log_expected_failure(f"Failed to add beatmaps to collection '{name}'", error)
             raise error from exc
         except Exception as exc:
@@ -213,8 +209,8 @@ class CollectionService:
             updated_collection = self.collection_repository.remove_beatmaps(name, beatmap_hashes)
             self._log_info(f"Removed {len(beatmap_hashes)} beatmaps from collection '{name}'.")
             return updated_collection
-        except RepositoryCollectionNotFoundError as exc:
-            error = CollectionServiceNotFoundError(name)
+        except RepositoryNotFoundError as exc:
+            error = ServiceNotFoundError(str(exc))
             self._log_expected_failure(f"Failed to remove beatmaps from collection '{name}'", error)
             raise error from exc
         except Exception as exc:
@@ -226,10 +222,10 @@ class CollectionService:
 
         try:
             if self.collection_repository.exists(new_name):
-                error = CollectionAlreadyExistsError(new_name)
+                error = ServiceConflictError(f"Collection '{new_name}' already exists.")
                 self._log_expected_failure(f"Failed to merge collections into '{new_name}'", error)
                 raise error
-        except CollectionAlreadyExistsError:
+        except ServiceConflictError:
             raise
         except Exception as exc:
             self._log_unexpected_failure(f"Failed to prepare merge into collection '{new_name}'.")
@@ -282,7 +278,7 @@ class CollectionService:
             writer = CollectionDbWriter()
             writer.write(collections, output_path)
         except OSError as exc:
-            error = CollectionExportError(output_path, str(exc))
+            error = ServiceDataError(f"Failed to export collections to '{output_path}': {exc}")
             self._log_expected_failure(f"Failed to export collections to {output_path}", error)
             raise error from exc
         except Exception as exc:

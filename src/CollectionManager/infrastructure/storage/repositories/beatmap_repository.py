@@ -13,7 +13,7 @@ from sqlmodel import select
 from typing import Any, cast
 
 from src.CollectionManager.domain.model.beatmap import Beatmap
-from src.CollectionManager.infrastructure.exceptions.repository import BeatmapNotFoundError
+from src.CollectionManager.infrastructure.exceptions.repository import RepositoryNotFoundError
 
 from ..models import BeatmapRecord
 from ..sqlite_db import SqliteDB
@@ -63,7 +63,7 @@ class BeatmapRepository:
 		with self._db.beatmap_session() as session:
 			record = session.get(BeatmapRecord, md5_hash)
 			if record is None:
-				raise BeatmapNotFoundError(f"Beatmap with hash '{md5_hash}' does not exist.", md5_hash)
+				raise RepositoryNotFoundError(f"Beatmap with hash '{md5_hash}' does not exist.")
 			return record.to_domain()
 
 	def count(self) -> int:
@@ -303,7 +303,7 @@ class BeatmapRepository:
 		with self._db.beatmap_session() as session:
 			record = session.get(BeatmapRecord, md5_hash)
 			if record is None:
-				raise BeatmapNotFoundError(f"Beatmap with hash '{md5_hash}' does not exist.", md5_hash)
+				raise RepositoryNotFoundError(f"Beatmap with hash '{md5_hash}' does not exist.")
 			session.delete(record)
 			session.commit()
 

@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from src.CollectionManager.app import bootstrap
-from src.CollectionManager.domain.exceptions import DataImportError
+from src.CollectionManager.domain.exceptions import ServiceDataError
 from src.CollectionManager.domain.model import Collection
 from src.CollectionManager.infrastructure.osu.collection_db_parser import parse_collection_db_stream
 from src.CollectionManager.infrastructure.osu.collection_db_writer import CollectionDbWriter
@@ -81,8 +81,8 @@ def test_import_collection_db_rejects_duplicate_names_without_partial_write(cont
         export_path,
     )
 
-    with pytest.raises(DataImportError) as exc_info:
+    with pytest.raises(ServiceDataError) as exc_info:
         bootstrap.import_collection_db(container, export_path)
 
-    assert exc_info.value.source_path == export_path
+    assert str(exc_info.value) == f"Failed to import data from '{export_path}': Collection 'Existing' already exists."
     assert [collection.name for collection in service.get_all_collections()] == ["Existing"]

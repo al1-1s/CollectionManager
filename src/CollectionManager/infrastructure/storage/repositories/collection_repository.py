@@ -9,7 +9,7 @@ from sqlalchemy import delete, func, insert, update
 from sqlmodel import select
 
 from src.CollectionManager.domain.model import Collection
-from src.CollectionManager.infrastructure.exceptions.repository import CollectionNotFoundError
+from src.CollectionManager.infrastructure.exceptions.repository import RepositoryNotFoundError
 
 from ..models import CollectionBeatmapRecord, CollectionRecord
 from ..sqlite_db import SqliteDB
@@ -92,7 +92,7 @@ class CollectionRepository:
 		with self._db.collection_session() as session:
 			meta_record = session.get(CollectionRecord, name)
 			if meta_record is None:
-				raise CollectionNotFoundError(f"Collection '{name}' does not exist.", name)
+				raise RepositoryNotFoundError(f"Collection '{name}' does not exist.")
 			session.exec(
 				delete(CollectionBeatmapRecord).where(cast(Any, CollectionBeatmapRecord.collection_name) == name)
 			)
@@ -104,7 +104,7 @@ class CollectionRepository:
 		with self._db.collection_session() as session:
 			meta_record = session.get(CollectionRecord, name)
 			if meta_record is None:
-				raise CollectionNotFoundError(f"Collection '{name}' does not exist.", name)
+				raise RepositoryNotFoundError(f"Collection '{name}' does not exist.")
 
 			relation_records = session.exec(
 				select(CollectionBeatmapRecord)
@@ -148,7 +148,7 @@ class CollectionRepository:
 		with self._db.collection_session() as session:
 			meta_record = session.get(CollectionRecord, name)
 			if meta_record is None:
-				raise CollectionNotFoundError(f"Collection '{name}' does not exist.", name)
+				raise RepositoryNotFoundError(f"Collection '{name}' does not exist.")
 
 			existing = [
 				record
@@ -178,7 +178,7 @@ class CollectionRepository:
 		with self._db.collection_session() as session:
 			meta_record = session.get(CollectionRecord, name)
 			if meta_record is None:
-				raise CollectionNotFoundError(f"Collection '{name}' does not exist.", name)
+				raise RepositoryNotFoundError(f"Collection '{name}' does not exist.")
 
 			for record in session.exec(
 				select(CollectionBeatmapRecord).where(cast(Any, CollectionBeatmapRecord.collection_name) == name)
@@ -222,7 +222,7 @@ class CollectionRepository:
 		with self._db.collection_session() as session:
 			old_record = session.get(CollectionRecord, old_name)
 			if old_record is None:
-				raise CollectionNotFoundError(f"Collection '{old_name}' does not exist.", old_name)
+				raise RepositoryNotFoundError(f"Collection '{old_name}' does not exist.")
 
 			old_record.name = new_name
 			session.add(old_record)

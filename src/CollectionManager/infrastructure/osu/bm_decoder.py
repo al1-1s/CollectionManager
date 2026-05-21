@@ -4,7 +4,7 @@ from pathlib import Path
 import rosu_pp_py as rosu # for sr calculation
 
 from src.CollectionManager.domain.model.beatmap import Beatmap
-from src.CollectionManager.infrastructure.exceptions.parser import BeatmapDecodeError, MissingFieldError
+from src.CollectionManager.infrastructure.exceptions.parser import ParseError
 
 
 UNIX_EPOCH_TICKS = 621355968000000000
@@ -137,12 +137,10 @@ class BeatmapDecoder:
             meta["md5_hash"] = hashlib.md5(content).hexdigest()
             bm = rosu.Beatmap(content=content)
             meta["no_mod_sr"] = rosu.Difficulty().calculate(bm).stars
-        except MissingFieldError:
-            raise
         except Exception as exc:
-            raise BeatmapDecodeError(
+            raise ParseError(
                 f"Failed to decode beatmap '{path}'.",
-                path,
+                path=path,
                 line_number=line_number or None,
                 context=current_line or None,
             ) from exc
@@ -156,10 +154,10 @@ class BeatmapDecoder:
                 meta[key] = default_value
         for field in self.REQUIRED_FIELDS:
             if field not in meta:
-                raise MissingFieldError(
+                raise ParseError(
                     f"Missing required field '{field}' in beatmap '{path}'.",
-                    field,
-                    {"beatmap_path": str(path), "present_fields": sorted(meta.keys())},
+                    path=path,
+                    details={"missing_field": field, "present_fields": sorted(meta.keys())},
                 )
 
         return Beatmap(

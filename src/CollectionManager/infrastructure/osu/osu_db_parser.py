@@ -128,32 +128,34 @@ def _legacy_error_position(data: bytes) -> int:
     return len(data)
 
 
+def _build_parse_error(data: bytes, exc: Exception) -> ParseError:
+    import binascii
+
+    pos = None
+    if RustBackendParseError is not None and isinstance(exc, RustBackendParseError):
+        pos = rust_backend_error_pos(exc)
+    if pos is None:
+        pos = _legacy_error_position(data)
+    start = max(0, pos - 64)
+    end = min(len(data), pos + 64)
+    snippet = data[start:end]
+    context = binascii.hexlify(snippet).decode()
+    return ParseError(
+        f"Failed to parse osu!.db at position {pos}. Context: {context}",
+        pos,
+        context=context,
+    )
+
+
 def parse_osu_db_stream(stream: BinaryIO):
     data = stream.read()
     try:
         return _parse_osu_db_bytes(data)
     except Exception as exc:
-        if RustBackendParseError is not None and isinstance(exc, RustBackendParseError):
-            raise ValueError(rust_backend_error_message(exc)) from exc
-        raise
+        raise _build_parse_error(data, exc) from exc
 
 def parse_osu_db(data: bytes):
-    import binascii
-
     try:
         return _parse_osu_db_bytes(data)
     except Exception as e:
-        pos = None
-        if RustBackendParseError is not None and isinstance(e, RustBackendParseError):
-            pos = rust_backend_error_pos(e)
-        if pos is None:
-            pos = _legacy_error_position(data)
-        start = max(0, pos - 64)
-        end = min(len(data), pos + 64)
-        snippet = data[start:end]
-        context = binascii.hexlify(snippet).decode()
-        raise ParseError(
-            f"Failed to parse osu!.db at position {pos}. Context: {context}",
-            pos,
-            context=context,
-        ) from e
+        raise _build_parse_error(data, e) from e

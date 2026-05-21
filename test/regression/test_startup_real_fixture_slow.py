@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from src.CollectionManager.app import bootstrap
-from src.CollectionManager.domain.exceptions import CollectionServiceNotFoundError
+from src.CollectionManager.domain.exceptions import ServiceNotFoundError
 
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "test_data"
@@ -46,7 +46,7 @@ def test_load_initial_data_resets_existing_state(container, real_osu_dir: Path, 
 
     assert summary.beatmaps_loaded == container.beatmap_repository.count()
     assert summary.collections_loaded == container.collection_repository.count()
-    with pytest.raises(CollectionServiceNotFoundError):
+    with pytest.raises(ServiceNotFoundError):
         service.get_collection("Temporary Collection")
 
 

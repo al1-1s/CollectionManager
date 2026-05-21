@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.CollectionManager.domain.model import Beatmap, Collection
-from src.CollectionManager.infrastructure.exceptions.parser import MissingFieldError
+from src.CollectionManager.infrastructure.exceptions.parser import ParseError
 
 
 def _get(raw: Any, key: str, default: Any = None) -> Any:
@@ -28,10 +28,13 @@ def map_beatmap(raw: Any) -> Beatmap:
         case 3:
             pair = _get(raw, "pair_mania", []) or []
         case _:
-            raise ValueError(f"Unknown mode: {mode}")
+            raise ParseError(f"Unknown mode: {mode}", details={"mode": mode, "raw": raw})
     if not pair:
         # This may happen due to those "delete after download" difficulties.
-        raise MissingFieldError(f"No star rating pair found for beatmap with mode {mode} and hash {_get(raw, 'md5_hash', 'unknown')}", f"pair {mode}", raw)
+        raise ParseError(
+            f"No star rating pair found for beatmap with mode {mode} and hash {_get(raw, 'md5_hash', 'unknown')}",
+            details={"missing_field": f"pair {mode}", "raw": raw},
+        )
         
         pair = [(0, 0.0)]
     no_mod_sr = pair[0][1]

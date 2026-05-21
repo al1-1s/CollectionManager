@@ -3,8 +3,8 @@ from pathlib import Path
 import pytest
 
 from src.CollectionManager.app import bootstrap
-from src.CollectionManager.domain.exceptions import DataImportError, ServiceOperationError
-from src.CollectionManager.domain.service.import_service import ImportService
+from src.CollectionManager.domain.exceptions import ServiceDataError, ServiceOperationError
+from src.CollectionManager.domain.service import ImportService
 
 
 def test_import_beatmap_packages_imports_single_and_multiple_osz(container, osu_dir: Path, osz_factory, osu_content_factory) -> None:
@@ -92,13 +92,13 @@ def test_import_beatmap_packages_validates_missing_and_suffix_inputs(container, 
     wrong_suffix.write_text("not an osz", encoding="utf-8")
     missing = temp_workspace / "missing.osz"
 
-    with pytest.raises(DataImportError) as missing_exc:
+    with pytest.raises(ServiceDataError) as missing_exc:
         bootstrap.import_beatmap_packages(container, osu_dir, [missing])
-    assert missing_exc.value.source_path == missing
+    assert str(missing_exc.value) == f"Failed to import data from '{missing}': Missing required file."
 
-    with pytest.raises(DataImportError) as suffix_exc:
+    with pytest.raises(ServiceDataError) as suffix_exc:
         bootstrap.import_beatmap_packages(container, osu_dir, [wrong_suffix])
-    assert suffix_exc.value.source_path == wrong_suffix
+    assert str(suffix_exc.value) == f"Failed to import data from '{wrong_suffix}': Expected a '.osz' beatmap package."
 
 
 def test_import_service_wraps_decode_failures(temp_workspace: Path) -> None:

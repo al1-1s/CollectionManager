@@ -1,9 +1,8 @@
 from sqlmodel import select
 
 from src.CollectionManager.domain.exceptions import (
-    BeatmapServiceNotFoundError,
-    CollectionAlreadyExistsError,
-    CollectionServiceNotFoundError,
+    ServiceConflictError,
+    ServiceNotFoundError,
 )
 from src.CollectionManager.domain.model import Collection
 from src.CollectionManager.infrastructure.storage.models import CollectionBeatmapRecord
@@ -57,8 +56,8 @@ def test_import_collections_rejects_duplicates_atomically(container) -> None:
                 Collection(name="Batch", hashes=[]),
             ]
         )
-    except CollectionAlreadyExistsError as exc:
-        assert exc.collection_name == "Batch"
+    except ServiceConflictError as exc:
+        assert str(exc) == "Collection 'Batch' already exists."
     else:
         raise AssertionError("Expected duplicate names within the import batch to be rejected")
 
@@ -66,8 +65,8 @@ def test_import_collections_rejects_duplicates_atomically(container) -> None:
 
     try:
         service.import_collections([Collection(name="Existing", hashes=[]), Collection(name="New One", hashes=[])])
-    except CollectionAlreadyExistsError as exc:
-        assert exc.collection_name == "Existing"
+    except ServiceConflictError as exc:
+        assert str(exc) == "Collection 'Existing' already exists."
     else:
         raise AssertionError("Expected duplicate names against existing collections to be rejected")
 
@@ -120,15 +119,15 @@ def test_add_and_remove_validate_missing_entities(container, beatmap_factory) ->
     service.create_collection("Target", [])
 
     try:
-        service.add_beatmaps_to_collection("Target", ["missing-hash"])
-    except BeatmapServiceNotFoundError as exc:
-        assert exc.md5_hash == "missing-hash"
+        service.remove_beatmaps("Target", ["missing-hash"])
+    except ServiceNotFoundError as exc:
+        assert str(exc) == "Beatmap with hash 'missing-hash' does not exist."
     else:
         raise AssertionError("Expected a missing beatmap hash to be rejected")
 
     try:
         service.remove_beatmaps("Missing Collection", ["hash-a"])
-    except CollectionServiceNotFoundError as exc:
-        assert exc.collection_name == "Missing Collection"
+    except ServiceNotFoundError as exc:
+        assert str(exc) == "Collection 'Missing Collection' does not exist."
     else:
         raise AssertionError("Expected a missing collection to be rejected")

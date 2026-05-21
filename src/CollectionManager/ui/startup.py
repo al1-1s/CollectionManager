@@ -9,7 +9,7 @@ from loguru import logger
 
 from src.CollectionManager.app.bootstrap import load_initial_data, summarize_current_data
 from src.CollectionManager.app.dependency import Container
-from src.CollectionManager.domain.exceptions import CachedBeatmapDatabaseNotFoundError
+from src.CollectionManager.domain.exceptions import ServiceDataError
 
 from .exceptions import resolve_ui_error_message
 from .i18n import current_language, language_label, register_listener, set_language, tr
@@ -113,7 +113,7 @@ class StartupDialog(QDialog):
             osu_path = Path(osu_dir)
             if self._use_previous_db.isChecked():
                 if not self._container.db.has_cached_beatmaps():
-                    raise CachedBeatmapDatabaseNotFoundError(self._container.db.paths.beatmap_db)
+                    raise ServiceDataError(f"No cached beatmap database found at '{self._container.db.paths.beatmap_db}'.")
                 summary = summarize_current_data(self._container, osu_path)
             else:
                 summary = load_initial_data(self._container, osu_path)

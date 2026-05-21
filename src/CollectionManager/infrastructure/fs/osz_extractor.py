@@ -2,7 +2,7 @@ import shutil
 import zipfile
 from pathlib import Path
 
-from src.CollectionManager.infrastructure.exceptions.fs import ExtractionError
+from src.CollectionManager.infrastructure.exceptions.fs import FileSystemError
 
 class OszExtractor:
     def __init__(self, output_path: Path):
@@ -11,7 +11,7 @@ class OszExtractor:
 
     def extract(self, input_path: Path):
         if not zipfile.is_zipfile(input_path):
-            raise ExtractionError(f"{input_path} is not a valid .osz file.", input_path)
+            raise FileSystemError(f"{input_path} is not a valid .osz file.", input_path)
         extracted_folder_name = self.output_path / input_path.stem
         with zipfile.ZipFile(input_path, 'r') as zip_ref:
             zip_ref.extractall(extracted_folder_name)

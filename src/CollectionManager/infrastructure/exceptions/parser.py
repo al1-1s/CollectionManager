@@ -1,41 +1,27 @@
+"""Infrastructure parser exception boundary."""
+
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Any
 
 
 class ParseError(Exception):
-    """Custom exception for parsing errors."""
+    """Raised when infrastructure parsing, mapping, or decode operations fail."""
 
     def __init__(
         self,
         message: str,
-        pos: int,
+        pos: int | None = None,
+        *,
         context: str | None = None,
+        path: str | Path | None = None,
+        line_number: int | None = None,
+        details: Any | None = None,
     ):
         super().__init__(message)
         self.pos = pos
         self.context = context
-
-
-class MissingFieldError(Exception):
-    """Custom exception for mapping errors."""
-
-    def __init__(self, message: str, missing_field: str, raw_data: Any):
-        super().__init__(message)
-        self.missing_field = missing_field
-        self.raw_data = raw_data
-
-
-class BeatmapDecodeError(Exception):
-    """Custom exception for `.osu` beatmap decoding errors."""
-
-    def __init__(
-        self,
-        message: str,
-        beatmap_path: str | Path,
-        line_number: int | None = None,
-        context: str | None = None,
-    ):
-        super().__init__(message)
-        self.beatmap_path = Path(beatmap_path)
+        self.path = Path(path) if path is not None else None
         self.line_number = line_number
-        self.context = context
+        self.details = details
