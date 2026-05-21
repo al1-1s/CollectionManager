@@ -27,7 +27,7 @@ class StartupDialog(QDialog):
         self._main_window = None
 
         self.setModal(True)
-        self.setFixedSize(370, 135)
+        self.setFixedSize(370, 160)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)

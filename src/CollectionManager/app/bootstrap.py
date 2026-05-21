@@ -12,7 +12,7 @@ from loguru import logger
 from src.CollectionManager.app.dependency import Container
 from src.CollectionManager.app.logger import DEFAULT_LEVEL, init_logging
 from src.CollectionManager.domain.exceptions import DataImportError, ServiceError, ServiceOperationError
-from src.CollectionManager.domain.service.import_service import ImportService
+from src.CollectionManager.domain.service import ImportService
 from src.CollectionManager.infrastructure.exceptions.parser import MissingFieldError, ParseError
 from src.CollectionManager.infrastructure.osu import (
     map_beatmap,
